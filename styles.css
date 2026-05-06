@@ -1,0 +1,94 @@
+.volcano-pane {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: 10px;
+	gap: 10px;
+}
+
+.volcano-header {
+	border-bottom: 1px solid var(--background-modifier-border);
+	padding-bottom: 8px;
+}
+
+.volcano-header h2 {
+	margin: 0;
+	font-size: 16px;
+	color: var(--text-normal);
+}
+
+.volcano-messages {
+	flex: 1;
+	overflow-y: auto;
+	min-height: 0;
+}
+
+.volcano-message {
+	margin-bottom: 10px;
+	padding: 8px 12px;
+	border-radius: 8px;
+}
+
+.volcano-message-user {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	margin-left: 20px;
+}
+
+.volcano-message-assistant {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+	margin-right: 20px;
+}
+
+.volcano-message-content {
+	word-wrap: break-word;
+	white-space: pre-wrap;
+}
+
+.volcano-empty-state {
+	text-align: center;
+	color: var(--text-muted);
+	font-style: italic;
+	padding: 40px 20px;
+}
+
+.volcano-input {
+	display: flex;
+	gap: 8px;
+}
+
+.volcano-input textarea {
+	flex: 1;
+	resize: none;
+	padding: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-family: var(--font-interface);
+}
+
+.volcano-input button {
+	padding: 8px 16px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.volcano-input button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.volcano-input button:hover:not(:disabled) {
+	background-color: var(--interactive-accent-hover);
+}
+
+.volcano-settings-status {
+	padding: 8px 12px;
+	margin-bottom: 12px;
+	border-radius: 4px;
+}

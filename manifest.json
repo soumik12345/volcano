@@ -1,0 +1,10 @@
+{
+	"id": "volcano",
+	"name": "Volcano",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "A writing assistant for Obsidian.",
+	"author": "Soumik Rakshit",
+	"authorUrl": "https://github.com/soumik12345",
+	"isDesktopOnly": false
+}
