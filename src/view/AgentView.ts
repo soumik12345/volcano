@@ -276,10 +276,10 @@ export class AgentView extends ItemView {
 			if (!token.includes(':')) {
 				// Show type options
 				const typeOptions: Array<{ prefix: string; icon: string; label: string }> = [];
-				if ('note'.startsWith(token))   typeOptions.push({ prefix: '@note',   icon: '📄', label: '@note: — search notes' });
-				if ('folder'.startsWith(token)) typeOptions.push({ prefix: '@folder', icon: '📁', label: '@folder: — search folders' });
-				if ('tag'.startsWith(token))    typeOptions.push({ prefix: '@tag',    icon: '🏷️', label: '@tag: — search tags' });
-				if ('web'.startsWith(token))    typeOptions.push({ prefix: '@web',    icon: '🌐', label: '@web — enable web search' });
+				if ('note'.startsWith(token))   typeOptions.push({ prefix: '@note:',   icon: '📄', label: '@note: — search notes' });
+				if ('folder'.startsWith(token)) typeOptions.push({ prefix: '@folder:', icon: '📁', label: '@folder: — search folders' });
+				if ('tag'.startsWith(token))    typeOptions.push({ prefix: '@tag:',    icon: '🏷️', label: '@tag: — search tags' });
+				if ('web'.startsWith(token))    typeOptions.push({ prefix: '@web',     icon: '🌐', label: '@web — enable web search' });
 
 				for (const opt of typeOptions) {
 					results.push({
@@ -366,6 +366,14 @@ export class AgentView extends ItemView {
 		// Handle type-prefix placeholder selections (e.g. clicking "@note: — search notes")
 		if (item.chip.value.startsWith('__type_prefix__:')) {
 			const prefix = item.chip.value.slice('__type_prefix__:'.length);
+
+			// @web has no sub-query — turn it straight into a chip instead of
+			// re-inserting "@web" text and re-triggering the picker (which would
+			// just show the same @web placeholder again).
+			if (prefix === '@web') {
+				this.addChipAndClean({ type: 'web', label: 'Web search', value: 'web' });
+				return;
+			}
 			// prefix is like "@note:" or "@web"
 			// Preserve the @ — only replace the text between @ and the cursor
 			const anchorNode = this._mentionAnchorNode;
