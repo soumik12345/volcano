@@ -92,3 +92,75 @@
 	margin-bottom: 12px;
 	border-radius: 4px;
 }
+
+.volcano-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.volcano-header-button {
+	font-size: 12px;
+	padding: 4px 8px;
+	background-color: transparent;
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.volcano-header-button:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.volcano-message-role {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	opacity: 0.7;
+	margin-bottom: 4px;
+}
+
+.volcano-message-error {
+	background-color: var(--background-modifier-error);
+	color: var(--text-normal);
+	border: 1px solid var(--text-error);
+}
+
+.volcano-message-error .volcano-message-content {
+	color: var(--text-normal);
+}
+
+.volcano-tool-card {
+	margin: 6px 20px 6px 0;
+	padding: 8px 10px;
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	font-size: 12px;
+}
+
+.volcano-tool-name {
+	font-weight: 600;
+	color: var(--text-muted);
+	margin-bottom: 4px;
+}
+
+.volcano-tool-args,
+.volcano-tool-result {
+	margin: 4px 0 0;
+	padding: 6px 8px;
+	background-color: var(--background-primary);
+	border-radius: 4px;
+	font-family: var(--font-monospace);
+	font-size: 11px;
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-height: 160px;
+	overflow-y: auto;
+}
+
+.volcano-stop {
+	background-color: var(--background-modifier-error) !important;
+}
