@@ -6,7 +6,8 @@ import {
 	setDefaultOpenAIClient,
 	setTracingDisabled,
 	user,
-	type AgentInputItem
+	type AgentInputItem,
+	type Tool
 } from '@openai/agents';
 
 setTracingDisabled(true);
@@ -14,6 +15,8 @@ import type { VolcanoSettings } from '../settings';
 import type { VaultAdapter } from '../vault/VaultAdapter';
 import { VOLCANO_SYSTEM_PROMPT } from './systemPrompt';
 import { buildReadOnlyTools } from './tools';
+import { buildWebTools } from './tools/web';
+import { createWebSearchProvider } from './web';
 
 export interface RunCallbacks {
 	onTextDelta?: (delta: string) => void;
@@ -34,11 +37,15 @@ export class AgentClient {
 		});
 		setDefaultOpenAIClient(openaiClient);
 
+		const tools: Tool[] = [...buildReadOnlyTools(vault)];
+		const webProvider = createWebSearchProvider(settings);
+		if (webProvider) tools.push(...buildWebTools(webProvider));
+
 		this.agent = new Agent({
 			name: 'Volcano',
 			instructions: VOLCANO_SYSTEM_PROMPT,
 			model: new OpenAIChatCompletionsModel(openaiClient, settings.model),
-			tools: buildReadOnlyTools(vault)
+			tools
 		});
 	}
 
