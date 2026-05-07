@@ -2,16 +2,23 @@ import { Plugin } from 'obsidian';
 import { AgentView, VOLCANO_VIEW_TYPE } from './view/AgentView';
 import { VaultAdapter } from './vault/VaultAdapter';
 import { DEFAULT_SETTINGS, VolcanoSettings, VolcanoSettingTab } from './settings';
+import { DiffEngine } from './diff/DiffEngine';
+import { volcanoDiffExtension } from './diff/cmDecorations';
 
 export default class VolcanoPlugin extends Plugin {
 	settings: VolcanoSettings;
 	vaultAdapter: VaultAdapter;
+	diffEngine: DiffEngine;
 
 	async onload() {
 		await this.loadSettings();
 
-		// Initialize vault adapter
+		// Initialize vault adapter and diff engine
 		this.vaultAdapter = new VaultAdapter(this.app);
+		this.diffEngine = new DiffEngine(this.vaultAdapter);
+
+		// Register the CM6 extension on every markdown editor so diffs can be visualized inline.
+		this.registerEditorExtension(volcanoDiffExtension);
 
 		// Register the agent view
 		this.registerView(

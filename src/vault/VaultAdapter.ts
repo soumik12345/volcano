@@ -35,6 +35,10 @@ export class VaultAdapter {
 		}
 	}
 
+	exists(path: string): boolean {
+		return this.app.vault.getAbstractFileByPath(path) !== null;
+	}
+
 	async createNote(path: string, content: string): Promise<void> {
 		const existingFile = this.app.vault.getAbstractFileByPath(path);
 		if (existingFile) {

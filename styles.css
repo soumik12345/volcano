@@ -164,3 +164,123 @@
 .volcano-stop {
 	background-color: var(--background-modifier-error) !important;
 }
+
+/* Pending changes panel */
+
+.volcano-pending-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px;
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+}
+
+.volcano-pending-header {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--text-muted);
+}
+
+.volcano-pending-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 6px 8px;
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+}
+
+.volcano-pending-row.volcano-pending-conflict {
+	border-color: var(--text-error);
+}
+
+.volcano-pending-meta {
+	flex: 1;
+	min-width: 0;
+}
+
+.volcano-pending-tag {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+}
+
+.volcano-pending-path {
+	font-size: 12px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+	color: var(--text-normal);
+}
+
+.volcano-pending-summary {
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.volcano-pending-status {
+	font-size: 11px;
+	color: var(--text-error);
+	margin-top: 2px;
+}
+
+.volcano-pending-actions {
+	display: flex;
+	gap: 4px;
+	flex-shrink: 0;
+}
+
+.volcano-pending-button {
+	font-size: 11px;
+	padding: 3px 8px;
+	border-radius: 4px;
+	background-color: transparent;
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+	cursor: pointer;
+}
+
+.volcano-pending-button:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.volcano-pending-accept {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.volcano-pending-accept:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+.volcano-pending-reject {
+	color: var(--text-error);
+	border-color: var(--text-error);
+}
+
+/* CodeMirror diff overlay */
+
+.volcano-diff-removed {
+	background-color: rgba(255, 80, 80, 0.18);
+	text-decoration: line-through;
+	text-decoration-color: rgba(255, 80, 80, 0.6);
+}
+
+.volcano-diff-added {
+	background-color: rgba(80, 200, 120, 0.15);
+	border-left: 3px solid rgba(80, 200, 120, 0.7);
+	padding: 2px 8px;
+	font-family: var(--font-monospace);
+	font-size: var(--font-text-size);
+	white-space: pre-wrap;
+	color: var(--text-normal);
+}
+
+.volcano-diff-added-line {
+	white-space: pre-wrap;
+	min-height: 1em;
+}

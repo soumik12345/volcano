@@ -13,9 +13,11 @@ import {
 setTracingDisabled(true);
 import type { VolcanoSettings } from '../settings';
 import type { VaultAdapter } from '../vault/VaultAdapter';
+import type { DiffEngine } from '../diff/DiffEngine';
 import { VOLCANO_SYSTEM_PROMPT } from './systemPrompt';
 import { buildReadOnlyTools } from './tools';
 import { buildWebTools } from './tools/web';
+import { buildWriteTools } from './tools/write';
 import { createWebSearchProvider } from './web';
 
 export interface RunCallbacks {
@@ -29,7 +31,7 @@ export class AgentClient {
 	private agent: Agent;
 	private history: AgentInputItem[] = [];
 
-	constructor(settings: VolcanoSettings, vault: VaultAdapter) {
+	constructor(settings: VolcanoSettings, vault: VaultAdapter, diffEngine: DiffEngine) {
 		const openaiClient = new OpenAI({
 			baseURL: settings.baseUrl,
 			apiKey: settings.apiKey || 'unused',
@@ -37,7 +39,10 @@ export class AgentClient {
 		});
 		setDefaultOpenAIClient(openaiClient);
 
-		const tools: Tool[] = [...buildReadOnlyTools(vault)];
+		const tools: Tool[] = [
+			...buildReadOnlyTools(vault),
+			...buildWriteTools(vault, diffEngine)
+		];
 		const webProvider = createWebSearchProvider(settings);
 		if (webProvider) tools.push(...buildWebTools(webProvider));
 
