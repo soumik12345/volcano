@@ -26,17 +26,17 @@ export default class VolcanoPlugin extends Plugin {
 			(leaf) => new AgentView(leaf, this)
 		);
 
-		// Add ribbon icon to open the agent pane
-		this.addRibbonIcon('bot', 'Open Volcano Agent', () => {
-			this.activateView();
+		// Add ribbon icon to toggle the agent pane
+		this.addRibbonIcon('bot', 'Toggle Volcano Agent', () => {
+			this.toggleView();
 		});
 
-		// Add command to open agent pane
+		// Add command to toggle agent pane
 		this.addCommand({
 			id: 'open-volcano-agent',
-			name: 'Open Volcano Agent',
+			name: 'Toggle Volcano Agent',
 			callback: () => {
-				this.activateView();
+				this.toggleView();
 			}
 		});
 
@@ -54,6 +54,15 @@ export default class VolcanoPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	async toggleView() {
+		const leaves = this.app.workspace.getLeavesOfType(VOLCANO_VIEW_TYPE);
+		if (leaves.length > 0) {
+			this.app.workspace.detachLeavesOfType(VOLCANO_VIEW_TYPE);
+			return;
+		}
+		await this.activateView();
 	}
 
 	async activateView() {
