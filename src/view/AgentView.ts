@@ -826,9 +826,14 @@ export class AgentView extends ItemView {
 	}
 
 	private clearPreviewIfActive(path: string): void {
-		const mdView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!mdView || mdView.file?.path !== path) return;
-		const cm = (mdView.editor as unknown as { cm?: EditorView }).cm;
-		if (cm) applyDiffToEditor(cm, null);
+		// Iterate all open markdown leaves — getActiveViewOfType would miss the
+		// file when the Volcano pane itself is the active leaf (e.g. just after
+		// clicking Accept/Reject).
+		for (const leaf of this.plugin.app.workspace.getLeavesOfType('markdown')) {
+			const view = leaf.view as MarkdownView;
+			if (view.file?.path !== path) continue;
+			const cm = (view.editor as unknown as { cm?: EditorView }).cm;
+			if (cm) applyDiffToEditor(cm, null);
+		}
 	}
 }
