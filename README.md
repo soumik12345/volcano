@@ -46,6 +46,14 @@ Volcano uses OpenAI-compatible APIs. Built-in presets:
 
 ## Installation
 
+### BRAT (Recommended)
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) lets you install Volcano directly from GitHub:
+
+1. Install and enable the **Obsidian42 - BRAT** community plugin
+2. Open the command palette and run **BRAT: Add a beta plugin for testing**
+3. Paste `https://github.com/soumik12345/volcano` and confirm
+4. Go to **Settings → Community plugins** and enable **Volcano**
+
 ### Manual Install
 1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release
 2. Copy them to `<your-vault>/.obsidian/plugins/volcano/`
@@ -75,31 +83,3 @@ Use the **Test Connection** button to verify your settings before starting a con
 4. Send with `Cmd+Enter` (macOS) / `Ctrl+Enter` (Windows/Linux); `Shift+Enter` inserts a newline
 5. Review any proposed edits in the **Pending Changes** panel and accept or reject them
 6. Use **New Thread** to start a fresh conversation
-
-## Development
-
-### Prerequisites
-- Node.js v16+
-- npm
-
-### Setup
-```bash
-npm install
-npm run dev   # watch mode — compiles on save
-```
-
-### Build for release
-```bash
-npm run build
-```
-
-### Lint
-```bash
-npm run lint
-```
-
-To test during development, copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/volcano/` folder and reload Obsidian.
-
-## License
-
-MIT

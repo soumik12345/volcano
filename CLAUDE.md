@@ -7,20 +7,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run dev` — watch mode build with source maps
 - `npm run build` — type-check then production bundle (`main.js`)
 - `npm run lint` — ESLint
+- `npm run version` — bump `manifest.json` + `versions.json` and stage both
 
-To test: copy `main.js`, `manifest.json`, `styles.css` to your vault's `.obsidian/plugins/volcano/` and reload Obsidian.
+No automated test runner. Type-checking (`tsc -noEmit`) is the primary validation step, run automatically as part of `npm run build`.
+
+To test: copy `main.js`, `manifest.json`, `styles.css` to your vault's `.obsidian/plugins/volcano/` and reload Obsidian. The `sql-wasm.wasm` binary is copied to the plugin root by esbuild automatically during build.
 
 ## Architecture
 
 ### Plugin Bootstrap (`src/main.ts`)
 
-Three systems are instantiated at `onload()` and shared across the plugin as `VolcanoPlugin` properties:
+Four systems are instantiated at `onload()` and shared across the plugin as `VolcanoPlugin` properties:
 
 - `VaultAdapter` — thin wrapper over the Obsidian vault API
 - `DiffEngine` — event-emitter staging layer for proposed edits
+- `SessionStore` — optional sql.js SQLite store for conversation persistence (null if WASM fails to load)
 - A CodeMirror 6 state extension registered globally for diff decoration
 
-The `AgentView` receives references to all three via the plugin instance.
+The `AgentView` receives references to all four via the plugin instance.
 
 ### Agent Pipeline
 
@@ -35,7 +39,7 @@ onToolCall       — tool invocation fired
 onToolResult     — tool output available
 ```
 
-Clearing history (`clearHistory()`) resets the `history` array. A "New thread" creates a fresh `AgentClient` instance.
+Clearing history (`clearHistory()`) resets the `history` array. A "New thread" creates a fresh `AgentClient` instance. After the first exchange in a session, `AgentClient` fires an auto-title call as a fire-and-forget background request to generate a session title from the conversation.
 
 **`AgentView`** (`src/view/AgentView.ts`) is pure vanilla DOM — the Svelte files in `src/view/components/` are unused. The streaming rendering model:
 
@@ -45,6 +49,18 @@ Clearing history (`clearHistory()`) resets the `history` array. A "New thread" c
 - Tool cards are inserted inline at call time; results are appended to the card when available.
 - `finalizeActiveSeg()` is called on `onReasoningDelta`/`onToolCall` to close the current text segment before inserting a new block.
 - `fixLinks()` post-processes rendered HTML to convert backtick-wrapped URLs to `<a>` elements and wire `window.open` click handlers (required in Electron).
+
+### Session Persistence
+
+`SessionStore` (`src/session/SessionStore.ts`) wraps `sql.js` (in-memory SQLite compiled to WASM). The binary `sql-wasm.wasm` is loaded from the plugin directory at runtime via `vault.adapter.readBinary`. The database file `sessions.db` is persisted at `<vault>/.obsidian/plugins/volcano/sessions.db` via `vault.adapter.writeBinary` after each write.
+
+Schema:
+- `sessions(id, title, created_at, updated_at, history_json)` — one row per conversation thread
+- `messages(id, session_id, role, type, content, tool_name, created_at)` — individual turns for display
+
+Key methods: `appendMessage()` saves each user/assistant turn; `updateHistory()` stores the full `AgentInputItem[]` array; `listSessions()` returns sessions with message counts; `loadSession()` restores history for replay.
+
+`AgentView` opens a session history modal (history button in the toolbar) listing past sessions. Clicking a session calls `loadSession()` to restore both the `history` array and the visual conversation.
 
 ### Tool System
 
@@ -56,6 +72,10 @@ Tools are registered in `AgentClient`'s constructor and passed to the `@openai/a
 - **Web** (`src/agent/tools/web.ts`): `web_search`, `web_fetch` — only registered if a Tavily API key is configured. `web_fetch` uses a 30k-char truncation limit.
 
 All tools return JSON-stringified objects with an `error` field on failure (not thrown), so the agent can handle errors in-context.
+
+### Citations
+
+`src/agent/citations.ts` handles web research attribution. When the agent uses web tools, citations are extracted from search results and formatted as inline footnotes. Sources are tracked in note frontmatter when writing to the vault.
 
 ### Diff / Pending Changes System
 
@@ -79,4 +99,4 @@ The input editor is a `contentEditable` div. Typing `@` triggers a fuzzy picker 
 
 ### Provider Configuration
 
-All providers use the OpenAI SDK pointed at different `baseURL` values (`PROVIDER_PRESETS` in `settings.ts`). Anthropic and OpenRouter are accessed via their OpenAI-compatible endpoints — no Anthropic SDK. This means provider-specific features not exposed via the Chat Completions shape are unavailable.
+All providers use the OpenAI SDK pointed at different `baseURL` values (`PROVIDER_PRESETS` in `settings.ts`). Anthropic and OpenRouter are accessed via their OpenAI-compatible endpoints — no Anthropic SDK. This means provider-specific features not exposed via the Chat Completions shape are unavailable. `validateSettings()` checks URL format, model name, and API key requirements. `testConnection()` calls `models.list()` to verify connectivity.
