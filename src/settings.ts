@@ -8,7 +8,9 @@ export interface VolcanoSettings {
 	baseUrl: string;
 	apiKey: string;
 	model: string;
-	autoTitleModel: string;
+
+	// Agent behavior
+	maxTurns: number;
 
 	// Web search
 	webSearchProvider: 'tavily';
@@ -101,7 +103,7 @@ export const DEFAULT_SETTINGS: VolcanoSettings = {
 	baseUrl: PROVIDER_PRESETS.openai.baseUrl,
 	apiKey: '',
 	model: PROVIDER_PRESETS.openai.model,
-	autoTitleModel: '',
+	maxTurns: 100,
 	webSearchProvider: 'tavily',
 	webSearchApiKey: ''
 }
@@ -210,17 +212,24 @@ export class VolcanoSettingTab extends PluginSettingTab {
 					button.setButtonText('Test').setDisabled(false);
 				}));
 
-		// Auto-title model
+		// Max turns
 		new Setting(containerEl)
-			.setName('Auto-title model (optional)')
-			.setDesc('Cheaper model for thread titles. Leave blank to use main model.')
-			.addText(text => text
-				.setPlaceholder('gpt-5-nano')
-				.setValue(this.plugin.settings.autoTitleModel)
-				.onChange(async (value) => {
-					this.plugin.settings.autoTitleModel = value;
-					await this.plugin.saveSettings();
-				}));
+			.setName('Max turns')
+			.setDesc('Maximum number of agent turns per conversation (default: 100).')
+			.addText(text => {
+				text.inputEl.type = 'number';
+				text.inputEl.min = '1';
+				text.inputEl.style.width = '80px';
+				text
+					.setValue(String(this.plugin.settings.maxTurns))
+					.onChange(async (value) => {
+						const n = parseInt(value, 10);
+						if (!isNaN(n) && n >= 1) {
+							this.plugin.settings.maxTurns = n;
+							await this.plugin.saveSettings();
+						}
+					});
+			});
 
 		containerEl.createEl('h3', { text: 'Web Search' });
 

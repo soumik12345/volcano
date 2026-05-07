@@ -53,6 +53,8 @@ export class AgentClient {
 	private agent: Agent;
 	private history: AgentInputItem[] = [];
 	private currentReasoningDeltaCb: ((delta: string) => void) | null = null;
+	private openaiClient: OpenAI;
+	private settings: VolcanoSettings;
 
 	constructor(settings: VolcanoSettings, vault: VaultAdapter, diffEngine: DiffEngine) {
 		const openaiClient = new OpenAI({
@@ -60,6 +62,9 @@ export class AgentClient {
 			apiKey: settings.apiKey || 'unused',
 			dangerouslyAllowBrowser: true
 		});
+
+		this.openaiClient = openaiClient;
+		this.settings = settings;
 
 		// Tap chat.completions.create to forward streaming reasoning deltas.
 		// The agents SDK silently accumulates `delta.reasoning` into a single
@@ -96,6 +101,14 @@ export class AgentClient {
 		this.history = [];
 	}
 
+	setHistory(history: AgentInputItem[]): void {
+		this.history = [...history];
+	}
+
+	getHistory(): AgentInputItem[] {
+		return [...this.history];
+	}
+
 	/**
 	 * Run a turn with streaming. Returns the final assistant text.
 	 * `signal` lets the caller cancel the in-flight run.
@@ -110,7 +123,7 @@ export class AgentClient {
 		this.currentReasoningDeltaCb = callbacks.onReasoningDelta ?? null;
 
 		try {
-			const stream = await run(this.agent, turnInput, { stream: true, signal });
+			const stream = await run(this.agent, turnInput, { stream: true, signal, maxTurns: this.settings.maxTurns });
 
 			let assistantText = '';
 

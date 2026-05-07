@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from 'node:module';
+import { copyFileSync } from 'node:fs';
 import esbuildSvelte from "esbuild-svelte";
 import sveltePreprocess from "svelte-preprocess";
 
@@ -50,6 +51,9 @@ const context = await esbuild.context({
 		})
 	],
 });
+
+// Copy sql.js WASM binary alongside main.js (idempotent)
+copyFileSync('node_modules/sql.js/dist/sql-wasm.wasm', 'sql-wasm.wasm');
 
 if (prod) {
 	await context.rebuild();

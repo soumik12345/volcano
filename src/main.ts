@@ -4,11 +4,13 @@ import { VaultAdapter } from './vault/VaultAdapter';
 import { DEFAULT_SETTINGS, VolcanoSettings, VolcanoSettingTab } from './settings';
 import { DiffEngine } from './diff/DiffEngine';
 import { volcanoDiffExtension } from './diff/cmDecorations';
+import { SessionStore } from './session/SessionStore';
 
 export default class VolcanoPlugin extends Plugin {
 	settings: VolcanoSettings;
 	vaultAdapter: VaultAdapter;
 	diffEngine: DiffEngine;
+	sessionStore: SessionStore | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -16,6 +18,13 @@ export default class VolcanoPlugin extends Plugin {
 		// Initialize vault adapter and diff engine
 		this.vaultAdapter = new VaultAdapter(this.app);
 		this.diffEngine = new DiffEngine(this.vaultAdapter);
+
+		try {
+			this.sessionStore = await SessionStore.load(this.app);
+		} catch (err) {
+			console.error('[Volcano] Failed to load session store:', err);
+			// Plugin continues without session history if WASM or DB fails to load
+		}
 
 		// Register the CM6 extension on every markdown editor so diffs can be visualized inline.
 		this.registerEditorExtension(volcanoDiffExtension);
@@ -46,6 +55,7 @@ export default class VolcanoPlugin extends Plugin {
 
 	onunload() {
 		this.app.workspace.detachLeavesOfType(VOLCANO_VIEW_TYPE);
+		this.sessionStore?.close();
 	}
 
 	async loadSettings() {

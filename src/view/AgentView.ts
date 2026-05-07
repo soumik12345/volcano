@@ -8,6 +8,16 @@ import { applyDiffToEditor } from '../diff/cmDecorations';
 
 export const VOLCANO_VIEW_TYPE = 'volcano-agent-view';
 
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 interface MentionChip {
 	type: 'note' | 'folder' | 'tag' | 'web';
 	label: string;  // display text e.g. "Note: daily.md"
@@ -34,6 +44,10 @@ export class AgentView extends ItemView {
 	private _mentionAnchorNode: Node | null = null;
 	private _mentionAtOffset: number = -1;
 	private _mentionCursorOffset: number = -1;
+	private currentSessionId: string | null = null;
+	private sessionTitlePending = false;
+	private _historyOverlay: HTMLElement | null = null;
+	private _historyCard: HTMLElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: VolcanoPlugin) {
 		super(leaf);
@@ -60,7 +74,17 @@ export class AgentView extends ItemView {
 		const header = root.createDiv({ cls: 'volcano-header' });
 		header.createEl('h2', { text: '🌋 Volcano Agent' });
 
-		const newThreadBtn = header.createEl('button', {
+		const headerActions = header.createDiv({ cls: 'volcano-header-actions' });
+
+		const historyBtn = headerActions.createEl('button', {
+			cls: 'volcano-header-button',
+			text: '🕘 History'
+		});
+		historyBtn.addEventListener('click', () => {
+			this.openHistoryModal();
+		});
+
+		const newThreadBtn = headerActions.createEl('button', {
 			cls: 'volcano-header-button',
 			text: 'New thread'
 		});
@@ -82,7 +106,8 @@ export class AgentView extends ItemView {
 		// Make input row position:relative so picker's bottom:100% works
 		inputRow.style.position = 'relative';
 
-		// Create picker dropdown (hidden initially)
+		// Create picker dropdown (hidden initially) — direct child of inputRow
+		// so bottom:100% positions it above the entire input box
 		this.pickerEl = inputRow.createDiv({ cls: 'volcano-mention-picker' });
 		this.pickerEl.setAttribute('role', 'listbox');
 		this.pickerEl.hide();
@@ -94,15 +119,49 @@ export class AgentView extends ItemView {
 		};
 		document.addEventListener('mousedown', this._closePickerOnOutsideClick);
 
-		this.editorEl = inputRow.createDiv({ cls: 'volcano-input-editor' });
+		// Unified bordered box: editor on top, toolbar on bottom
+		const inputBox = inputRow.createDiv({ cls: 'volcano-input-box' });
+
+		this.editorEl = inputBox.createDiv({ cls: 'volcano-input-editor' });
 		this.editorEl.contentEditable = 'true';
 		this.editorEl.setAttribute('role', 'textbox');
 		this.editorEl.setAttribute('aria-multiline', 'true');
 		this.editorEl.setAttribute('aria-haspopup', 'listbox');
 		this.editorEl.setAttribute('aria-expanded', 'false');
-		this.editorEl.setAttribute('data-placeholder', 'Type your message… (Cmd+Enter to send, @ to mention)');
-		this.sendButton = inputRow.createEl('button', { text: 'Send', cls: 'volcano-send' });
-		this.stopButton = inputRow.createEl('button', { text: 'Stop', cls: 'volcano-stop' });
+		this.editorEl.setAttribute('data-placeholder', 'Type your message… (@ to mention)');
+
+		const toolbar = inputBox.createDiv({ cls: 'volcano-input-toolbar' });
+		const toolbarLeft = toolbar.createDiv({ cls: 'volcano-input-toolbar-left' });
+		const toolbarRight = toolbar.createDiv({ cls: 'volcano-input-toolbar-right' });
+
+		// @ mention trigger button
+		const atBtn = toolbarLeft.createEl('button', { cls: 'volcano-toolbar-icon-btn', attr: { 'aria-label': 'Mention' } });
+		atBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>`;
+		atBtn.addEventListener('click', () => {
+			this.editorEl.focus();
+			const sel = window.getSelection();
+			const textNode = document.createTextNode('@');
+			if (sel && sel.rangeCount > 0) {
+				const range = sel.getRangeAt(0);
+				range.deleteContents();
+				range.insertNode(textNode);
+			} else {
+				this.editorEl.appendChild(textNode);
+			}
+			// Place caret inside the text node at offset 1 so _doUpdateMentionPicker
+			// sees a TEXT_NODE anchor with '@' before the cursor and opens the picker.
+			const newRange = document.createRange();
+			newRange.setStart(textNode, 1);
+			newRange.collapse(true);
+			sel?.removeAllRanges();
+			sel?.addRange(newRange);
+			this.editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+		});
+
+		this.sendButton = toolbarRight.createEl('button', { cls: 'volcano-send', attr: { 'aria-label': 'Send' } });
+		this.sendButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
+		this.stopButton = toolbarRight.createEl('button', { cls: 'volcano-stop', attr: { 'aria-label': 'Stop' } });
+		this.stopButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
 		this.sendButton.disabled = true;
 		this.stopButton.hide();
 
@@ -534,6 +593,8 @@ export class AgentView extends ItemView {
 	}
 
 	private resetThread() {
+		this.currentSessionId = null;
+		this.sessionTitlePending = false;
 		this.abortController?.abort();
 		this.agentClient?.clearHistory();
 		this.toolCardEls.clear();
@@ -599,7 +660,24 @@ export class AgentView extends ItemView {
 		return '\n\n---\n[Context pinned by @-mentions]\n' + blocks.join('\n\n');
 	}
 
+	private async ensureSession(): Promise<void> {
+		if (this.currentSessionId || !this.plugin.sessionStore) return;
+		this.currentSessionId = await this.plugin.sessionStore.createSession();
+		this.sessionTitlePending = true;
+	}
+
+	private async generateAndSaveTitle(userMsg: string): Promise<void> {
+		if (!this.currentSessionId || !this.plugin.sessionStore) return;
+		const trimmed = userMsg.trim().replace(/\s+/g, ' ');
+		const title = trimmed.length <= 60 ? trimmed : trimmed.slice(0, 57) + '…';
+		await this.plugin.sessionStore.updateTitle(this.currentSessionId, title);
+		if (this._historyOverlay?.isConnected && this._historyCard) {
+			this.renderHistoryModalContent(this._historyCard, this._historyOverlay);
+		}
+	}
+
 	private async handleSend() {
+		await this.ensureSession();
 		if (this.abortController) return; // already in flight
 
 		const { displayText, chips } = this.extractEditorContent();
@@ -611,6 +689,11 @@ export class AgentView extends ItemView {
 		this.abortController = new AbortController();
 		const signal = this.abortController.signal;
 		this.setBusy(true);
+
+		if (this.sessionTitlePending) {
+			this.sessionTitlePending = false;
+			void this.generateAndSaveTitle(displayText);
+		}
 
 		this.messagesEl.querySelector('.volcano-empty-state')?.remove();
 		this.appendMessage('user', displayText);
@@ -673,7 +756,11 @@ export class AgentView extends ItemView {
 		};
 
 		try {
-			await client.sendMessage(fullMessage, signal, {
+			let capturedReasoningText = '';
+			const capturedToolCalls: Array<{ name: string; args: string }> = [];
+			const capturedToolResults: Array<{ name: string; result: string }> = [];
+
+			const assistantText = await client.sendMessage(fullMessage, signal, {
 				onTextDelta: (delta) => {
 					const seg = getOrCreateSeg();
 					seg.rawText += delta;
@@ -712,6 +799,7 @@ export class AgentView extends ItemView {
 					reasoningSeg.timerId = setTimeout(() => {
 						if (reasoningSeg) { reasoningSeg.timerId = null; void doRender(reasoningSeg); }
 					}, 50);
+					capturedReasoningText += delta;
 					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 				},
 				onReasoningItem: (text) => {
@@ -737,10 +825,12 @@ export class AgentView extends ItemView {
 				onToolCall: (name, args) => {
 					finalizeActiveSeg();
 					this.appendToolCard(streamContainerEl, name, args);
+					capturedToolCalls.push({ name, args });
 					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 				},
 				onToolResult: (name, result) => {
 					this.appendToolResultPreview(name, result);
+					capturedToolResults.push({ name, result });
 				}
 			});
 
@@ -753,6 +843,51 @@ export class AgentView extends ItemView {
 				if (seg.timerId !== null) { clearTimeout(seg.timerId); seg.timerId = null; }
 				await doRender(seg);
 			}
+
+			// Save turn to session DB
+			if (this.currentSessionId && this.plugin.sessionStore) {
+				const sid = this.currentSessionId;
+				const store = this.plugin.sessionStore;
+				const now = Date.now();
+
+				void store.appendMessage(sid, {
+					id: crypto.randomUUID(), session_id: sid,
+					role: 'user', type: 'text', content: displayText,
+					tool_name: null, created_at: now
+				});
+
+				let offset = 1;
+				if (capturedReasoningText) {
+					void store.appendMessage(sid, {
+						id: crypto.randomUUID(), session_id: sid,
+						role: 'assistant', type: 'reasoning', content: capturedReasoningText,
+						tool_name: null, created_at: now + offset++
+					});
+				}
+				for (const tc of capturedToolCalls) {
+					void store.appendMessage(sid, {
+						id: crypto.randomUUID(), session_id: sid,
+						role: 'assistant', type: 'tool_call', content: tc.args,
+						tool_name: tc.name, created_at: now + offset++
+					});
+				}
+				for (const tr of capturedToolResults) {
+					void store.appendMessage(sid, {
+						id: crypto.randomUUID(), session_id: sid,
+						role: 'assistant', type: 'tool_result', content: tr.result,
+						tool_name: tr.name, created_at: now + offset++
+					});
+				}
+				if (assistantText) {
+					void store.appendMessage(sid, {
+						id: crypto.randomUUID(), session_id: sid,
+						role: 'assistant', type: 'text', content: assistantText,
+						tool_name: null, created_at: now + offset++
+					});
+				}
+				void store.updateHistory(sid, client.getHistory());
+			}
+
 		} catch (err) {
 			for (const seg of segments) {
 				if (seg.timerId !== null) { clearTimeout(seg.timerId); seg.timerId = null; }
@@ -1043,6 +1178,172 @@ export class AgentView extends ItemView {
 				this.rejectDiff(diff);
 			});
 		}
+	}
+
+	private openHistoryModal(): void {
+		this._historyOverlay?.remove();
+		this._historyOverlay = null;
+		this._historyCard = null;
+
+		if (!this.plugin.sessionStore) {
+			new Notice('Volcano: session store not available.');
+			return;
+		}
+
+		const overlay = this.contentEl.createDiv({ cls: 'volcano-history-overlay' });
+		overlay.addEventListener('click', () => {
+			overlay.remove();
+			this._historyOverlay = null;
+			this._historyCard = null;
+		});
+
+		const card = overlay.createDiv({ cls: 'volcano-history-card' });
+		card.addEventListener('click', (e) => e.stopPropagation());
+
+		this._historyOverlay = overlay;
+		this._historyCard = card;
+
+		this.renderHistoryModalContent(card, overlay);
+	}
+
+	private renderHistoryModalContent(card: HTMLElement, overlay: HTMLElement): void {
+		card.empty();
+
+		const searchWrap = card.createDiv({ cls: 'volcano-history-search' });
+		const searchInput = searchWrap.createEl('input', {
+			type: 'text',
+			placeholder: 'Search sessions...',
+			cls: 'volcano-history-search-input'
+		});
+
+		const list = card.createDiv({ cls: 'volcano-history-list' });
+		const sessions = this.plugin.sessionStore!.listSessions(50);
+		const rowEls: Array<{ el: HTMLElement; title: string }> = [];
+
+		if (sessions.length === 0) {
+			list.createDiv({ cls: 'volcano-history-empty', text: 'No past sessions yet.' });
+		} else {
+			for (const session of sessions) {
+				const isCurrent = session.id === this.currentSessionId;
+				const row = list.createDiv({
+					cls: 'volcano-history-row' + (isCurrent ? ' volcano-history-row-current' : '')
+				});
+
+				const titleText = session.title ?? 'Untitled session';
+				row.createDiv({
+					cls: 'volcano-history-title' + (session.title ? '' : ' volcano-history-title-untitled'),
+					text: titleText
+				});
+
+				const right = row.createDiv({ cls: 'volcano-history-right' });
+				right.createSpan({ cls: 'volcano-history-time', text: relativeTime(session.updated_at) });
+
+				if (!isCurrent) {
+					row.addEventListener('click', () => {
+						overlay.remove();
+						this._historyOverlay = null;
+						this._historyCard = null;
+						void this.resumeSession(session.id);
+					});
+
+					const deleteBtn = right.createEl('button', { cls: 'volcano-history-delete-btn' });
+					// Trash icon SVG
+					deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+					deleteBtn.addEventListener('click', async (e) => {
+						e.stopPropagation();
+						try {
+							await this.plugin.sessionStore!.deleteSession(session.id);
+						} catch {
+							new Notice('Volcano: failed to delete session.');
+							return;
+						}
+						if (session.id === this.currentSessionId) this.resetThread();
+						this.renderHistoryModalContent(card, overlay);
+					});
+				}
+
+				rowEls.push({ el: row, title: titleText.toLowerCase() });
+			}
+		}
+
+		searchInput.addEventListener('input', () => {
+			const q = searchInput.value.toLowerCase();
+			for (const { el, title } of rowEls) {
+				el.style.display = q === '' || title.includes(q) ? '' : 'none';
+			}
+		});
+
+		setTimeout(() => searchInput.focus(), 50);
+	}
+
+	private async resumeSession(sessionId: string): Promise<void> {
+		if (!this.plugin.sessionStore) return;
+
+		const result = this.plugin.sessionStore.loadSession(sessionId);
+		if (!result) {
+			new Notice('Volcano: session not found.');
+			return;
+		}
+		const { session, messages } = result;
+
+		// Abort any in-flight request
+		this.abortController?.abort();
+		this.abortController = null;
+		this.setBusy(false);
+
+		// Clear tool card map and message area
+		this.toolCardEls.clear();
+		this.messagesEl.empty();
+
+		// Reset session state (don't use resetThread() — it'd clear currentSessionId too early)
+		this.currentSessionId = null;
+		this.sessionTitlePending = false;
+
+		// Restore agent history into the existing (or new) client
+		const client = this.agentClient ?? this.ensureAgentClient();
+		if (!client) return;
+		const history = JSON.parse(session.history_json) as import('@openai/agents').AgentInputItem[];
+		client.setHistory(history);
+
+		// Re-render stored messages
+		let currentAssistantContentEl: HTMLElement | null = null;
+
+		for (const msg of messages) {
+			if (msg.role === 'user') {
+				currentAssistantContentEl = null;
+				this.appendMessage('user', msg.content);
+			} else {
+				if (msg.type === 'text') {
+					this.toolCardEls.clear();
+					const msgEl = this.messagesEl.createDiv({ cls: 'volcano-message volcano-message-assistant' });
+					msgEl.createDiv({ cls: 'volcano-message-role', text: 'Volcano' });
+					currentAssistantContentEl = msgEl.createDiv({ cls: 'volcano-message-content' });
+					const textEl = currentAssistantContentEl.createDiv({ cls: 'volcano-stream-text' });
+					await MarkdownRenderer.render(this.plugin.app, msg.content, textEl, '', this);
+					this.fixLinks(textEl);
+				} else {
+					if (!currentAssistantContentEl) {
+						const msgEl = this.messagesEl.createDiv({ cls: 'volcano-message volcano-message-assistant' });
+						msgEl.createDiv({ cls: 'volcano-message-role', text: 'Volcano' });
+						currentAssistantContentEl = msgEl.createDiv({ cls: 'volcano-message-content' });
+					}
+					if (msg.type === 'reasoning') {
+						currentAssistantContentEl.appendChild(this.buildReasoningBlock(msg.content));
+					} else if (msg.type === 'tool_call') {
+						this.appendToolCard(currentAssistantContentEl, msg.tool_name ?? 'tool', msg.content);
+					} else if (msg.type === 'tool_result') {
+						this.appendToolResultPreview(msg.tool_name ?? 'tool', msg.content);
+					}
+				}
+			}
+		}
+
+		if (this.messagesEl.childElementCount === 0) {
+			this.renderEmptyState();
+		}
+
+		this.currentSessionId = sessionId;
+		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 	}
 
 	private async previewDiff(diff: StagedDiff): Promise<void> {
