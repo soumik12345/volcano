@@ -206,16 +206,11 @@ export class AgentView extends ItemView {
 				}
 			}
 
-			// Prevent bare Enter from inserting <br>/<div> in contenteditable
-			// (Cmd+Enter sends; Shift+Enter is allowed for newlines)
-			if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
-				event.preventDefault();
-				return;
-			}
-
-			if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+			// Enter sends; Shift+Enter inserts a newline
+			if (event.key === 'Enter' && !event.shiftKey) {
 				event.preventDefault();
 				void this.handleSend();
+				return;
 			}
 		});
 		this.editorEl.addEventListener('keyup', (e) => e.stopPropagation());
@@ -953,7 +948,7 @@ export class AgentView extends ItemView {
 
 		const header = block.createDiv({ cls: 'volcano-reasoning-header' });
 		header.createSpan({ cls: 'volcano-reasoning-label', text: 'Thinking…' });
-		const wordCountEl = header.createSpan({ cls: 'volcano-reasoning-wordcount', text: '~0 words' });
+		const wordCountEl = header.createSpan({ cls: 'volcano-reasoning-wordcount', text: '~0 tokens' });
 		const toggle = header.createEl('button', {
 			cls: 'volcano-reasoning-toggle',
 			text: startExpanded ? '▲ hide' : '▶ show'
@@ -970,8 +965,8 @@ export class AgentView extends ItemView {
 		});
 
 		const setWordCount = (text: string) => {
-			const wc = text.trim().split(/\s+/).filter(Boolean).length;
-			wordCountEl.setText(`~${wc} words`);
+			const tokens = Math.round(text.length / 4);
+			wordCountEl.setText(`~${tokens} tokens`);
 		};
 
 		return { block, body, setWordCount };
