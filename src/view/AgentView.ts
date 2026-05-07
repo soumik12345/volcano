@@ -21,20 +21,19 @@ export class AgentView extends ItemView {
 
 	private messagesEl!: HTMLElement;
 	private pendingEl!: HTMLElement;
-	private chipsEl!: HTMLElement;
 	private pickerEl!: HTMLElement;
-	private textarea!: HTMLTextAreaElement;
+	private editorEl!: HTMLElement;
 	private sendButton!: HTMLButtonElement;
 	private stopButton!: HTMLButtonElement;
 	private unsubscribeDiff: (() => void) | null = null;
 	private toolCardEls = new Map<string, HTMLElement>();
 	private pendingCollapsed = false;
-	private mentions: MentionChip[] = [];
 	private pickerActiveIndex = -1;
 	private _closePickerOnOutsideClick: ((e: MouseEvent) => void) | null = null;
 	private _pickerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-	private _mentionAtIdx: number = -1;
-	private _mentionCursorIdx: number = -1;
+	private _mentionAnchorNode: Node | null = null;
+	private _mentionAtOffset: number = -1;
+	private _mentionCursorOffset: number = -1;
 
 	constructor(leaf: WorkspaceLeaf, plugin: VolcanoPlugin) {
 		super(leaf);
@@ -72,9 +71,6 @@ export class AgentView extends ItemView {
 		this.pendingEl = root.createDiv({ cls: 'volcano-pending-panel' });
 		this.renderPendingPanel();
 
-		this.chipsEl = root.createDiv({ cls: 'volcano-chips-bar' });
-		this.chipsEl.hide();
-
 		this.messagesEl = root.createDiv({ cls: 'volcano-messages' });
 		this.renderEmptyState();
 
@@ -92,32 +88,31 @@ export class AgentView extends ItemView {
 		this.pickerEl.hide();
 
 		this._closePickerOnOutsideClick = (e: MouseEvent) => {
-			if (!this.pickerEl.contains(e.target as Node) && e.target !== this.textarea) {
+			if (!this.pickerEl.contains(e.target as Node) && !this.editorEl.contains(e.target as Node)) {
 				this.closePicker();
 			}
 		};
 		document.addEventListener('mousedown', this._closePickerOnOutsideClick);
 
-		this.textarea = inputRow.createEl('textarea', {
-			attr: {
-				rows: '3',
-				placeholder: 'Type your message… (Cmd+Enter to send, @ to mention)'
-			}
-		});
-		this.textarea.setAttribute('aria-haspopup', 'listbox');
-		this.textarea.setAttribute('aria-expanded', 'false');
+		this.editorEl = inputRow.createDiv({ cls: 'volcano-input-editor' });
+		this.editorEl.contentEditable = 'true';
+		this.editorEl.setAttribute('role', 'textbox');
+		this.editorEl.setAttribute('aria-multiline', 'true');
+		this.editorEl.setAttribute('aria-haspopup', 'listbox');
+		this.editorEl.setAttribute('aria-expanded', 'false');
+		this.editorEl.setAttribute('data-placeholder', 'Type your message… (Cmd+Enter to send, @ to mention)');
 		this.sendButton = inputRow.createEl('button', { text: 'Send', cls: 'volcano-send' });
 		this.stopButton = inputRow.createEl('button', { text: 'Stop', cls: 'volcano-stop' });
 		this.sendButton.disabled = true;
 		this.stopButton.hide();
 
 		const updateDisabled = () => {
-			this.sendButton.disabled = this.textarea.value.trim().length === 0;
+			this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
 			this.updateMentionPicker();
 		};
-		this.textarea.addEventListener('input', updateDisabled);
+		this.editorEl.addEventListener('input', updateDisabled);
 
-		this.textarea.addEventListener('keydown', (event) => {
+		this.editorEl.addEventListener('keydown', (event) => {
 			event.stopPropagation();
 
 			// Handle picker keyboard navigation when picker is open
@@ -152,13 +147,20 @@ export class AgentView extends ItemView {
 				}
 			}
 
+			// Prevent bare Enter from inserting <br>/<div> in contenteditable
+			// (Cmd+Enter sends; Shift+Enter is allowed for newlines)
+			if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+				event.preventDefault();
+				return;
+			}
+
 			if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
 				event.preventDefault();
 				void this.handleSend();
 			}
 		});
-		this.textarea.addEventListener('keyup', (e) => e.stopPropagation());
-		this.textarea.addEventListener('keypress', (e) => e.stopPropagation());
+		this.editorEl.addEventListener('keyup', (e) => e.stopPropagation());
+		this.editorEl.addEventListener('keypress', (e) => e.stopPropagation());
 
 		this.sendButton.addEventListener('click', () => {
 			void this.handleSend();
@@ -179,36 +181,6 @@ export class AgentView extends ItemView {
 		this.contentEl.empty();
 	}
 
-	// ── Chips bar ─────────────────────────────────────────────────────────────
-
-	private renderChipsBar() {
-		this.chipsEl.empty();
-		if (this.mentions.length === 0) {
-			this.chipsEl.hide();
-			return;
-		}
-		this.chipsEl.show();
-		const iconMap: Record<MentionChip['type'], string> = {
-			note: '📄',
-			folder: '📁',
-			tag: '🏷️',
-			web: '🌐'
-		};
-		for (let i = 0; i < this.mentions.length; i++) {
-			const chip = this.mentions[i];
-			if (!chip) continue;
-			const chipEl = this.chipsEl.createDiv({ cls: 'volcano-chip' });
-			chipEl.createSpan({ text: iconMap[chip.type] + ' ' + chip.label });
-			const removeBtn = chipEl.createEl('button', { cls: 'volcano-chip-remove', text: '×' });
-			const idx = i;
-			removeBtn.addEventListener('click', () => {
-				this.mentions.splice(idx, 1);
-				this.closePicker();
-				this.renderChipsBar();
-			});
-		}
-	}
-
 	// ── Mention picker ────────────────────────────────────────────────────────
 
 	private updatePickerActiveClass(items: HTMLElement[]) {
@@ -227,8 +199,11 @@ export class AgentView extends ItemView {
 		this.pickerEl.hide();
 		this.pickerEl.empty();
 		this.pickerActiveIndex = -1;
-		if (this.textarea) {
-			this.textarea.setAttribute('aria-expanded', 'false');
+		this._mentionAnchorNode = null;
+		this._mentionAtOffset = -1;
+		this._mentionCursorOffset = -1;
+		if (this.editorEl) {
+			this.editorEl.setAttribute('aria-expanded', 'false');
 		}
 	}
 
@@ -241,30 +216,32 @@ export class AgentView extends ItemView {
 	}
 
 	private _doUpdateMentionPicker(): void {
-		const text = this.textarea.value;
-		const cursor = this.textarea.selectionStart ?? text.length;
+		const sel = window.getSelection();
+		if (!sel || sel.rangeCount === 0) { this.closePicker(); return; }
 
-		// Find the last @ before the cursor with no space between it and the cursor
-		const textBeforeCursor = text.slice(0, cursor);
-		const atMatch = textBeforeCursor.match(/@([^\s]*)$/);
-
-		if (!atMatch) {
+		const anchorNode = sel.anchorNode;
+		// Only trigger when caret is in a plain text node inside editorEl
+		if (!anchorNode || anchorNode.nodeType !== Node.TEXT_NODE || !this.editorEl.contains(anchorNode)) {
 			this.closePicker();
 			return;
 		}
 
-		const atIdx = textBeforeCursor.lastIndexOf('@');
-		const token = atMatch[1] ?? ''; // text after @, e.g. "note:daily" or "" or "web"
+		const offset = sel.anchorOffset;
+		const textBefore = (anchorNode.textContent ?? '').slice(0, offset);
+		const atMatch = textBefore.match(/@([^\s]*)$/);
+
+		if (!atMatch) { this.closePicker(); return; }
+
+		const atIdx = textBefore.lastIndexOf('@');
+		const token = atMatch[1] ?? '';
 		const results = this.buildPickerResults(token);
 
-		if (results.length === 0) {
-			this.closePicker();
-			return;
-		}
+		if (results.length === 0) { this.closePicker(); return; }
 
-		// Record cursor position and @ index for use in addChipAndClean (Fix 4)
-		this._mentionAtIdx = atIdx;
-		this._mentionCursorIdx = cursor;
+		// Record position for use in selectMentionItem / addChipAndClean
+		this._mentionAnchorNode = anchorNode;
+		this._mentionAtOffset = atIdx;
+		this._mentionCursorOffset = offset;
 
 		this.pickerEl.empty();
 		this.pickerActiveIndex = -1;
@@ -274,14 +251,13 @@ export class AgentView extends ItemView {
 			itemEl.setAttribute('role', 'option');
 			itemEl.createSpan({ cls: 'volcano-mention-item-icon', text: item.icon });
 			itemEl.createSpan({ cls: 'volcano-mention-item-label', text: item.display });
-
 			itemEl.addEventListener('click', () => {
 				this.selectMentionItem(item);
 			});
 		}
 
 		this.pickerEl.show();
-		this.textarea.setAttribute('aria-expanded', 'true');
+		this.editorEl.setAttribute('aria-expanded', 'true');
 	}
 
 	private buildPickerResults(token: string): Array<{
@@ -390,19 +366,45 @@ export class AgentView extends ItemView {
 		// Handle type-prefix placeholder selections (e.g. clicking "@note: — search notes")
 		if (item.chip.value.startsWith('__type_prefix__:')) {
 			const prefix = item.chip.value.slice('__type_prefix__:'.length);
-			// prefix is like "@note:" or "@web" — insert it after the @ in the textarea
-			const newPrefix = prefix.startsWith('@') ? prefix.slice(1) : prefix;
-			const atIdx = this._mentionAtIdx;
-			const oldCursor = this._mentionCursorIdx;
-			if (atIdx < 0) return;
-			const text = this.textarea.value;
-			const newText = text.slice(0, atIdx) + newPrefix + text.slice(oldCursor);
-			this.textarea.value = newText;
-			const newCursor = atIdx + newPrefix.length;
-			this.textarea.setSelectionRange(newCursor, newCursor);
+			// prefix is like "@note:" or "@web"
+			// Preserve the @ — only replace the text between @ and the cursor
+			const anchorNode = this._mentionAnchorNode;
+			const atOffset = this._mentionAtOffset;
+			const cursorOffset = this._mentionCursorOffset;
+			if (!anchorNode || atOffset < 0) return;
+
+			// suffix = everything after @: "note:" or "web"
+			const suffix = prefix.startsWith('@') ? prefix.slice(1) : prefix;
+
+			try {
+				// Mutate the anchor text node in place so @ and the inserted suffix
+				// stay within the same text node. Using Range.insertNode would split
+				// the text node into three pieces, breaking the picker regex which
+				// scans only the caret's current text node.
+				const original = anchorNode.textContent ?? '';
+				const safeCursor = Math.min(cursorOffset, original.length);
+				const before = original.slice(0, atOffset + 1); // includes "@"
+				const after = original.slice(safeCursor);
+				anchorNode.textContent = before + suffix + after;
+
+				// Place caret right after the inserted suffix, still inside anchorNode
+				const caretOffset = before.length + suffix.length;
+				const newRange = document.createRange();
+				newRange.setStart(anchorNode, caretOffset);
+				newRange.collapse(true);
+				const sel = window.getSelection();
+				if (sel) {
+					sel.removeAllRanges();
+					sel.addRange(newRange);
+				}
+			} catch {
+				this.closePicker();
+				return;
+			}
+
 			this.closePicker();
-			this.textarea.focus();
-			this.updateMentionPicker();
+			this.editorEl.focus();
+			this.updateMentionPicker(); // re-trigger: now token is "note:" → shows note list
 			return;
 		}
 
@@ -417,28 +419,116 @@ export class AgentView extends ItemView {
 	}
 
 	private addChipAndClean(chip: MentionChip) {
-		// Remove @token from textarea using the recorded position from when the picker opened
-		const text = this.textarea.value;
-		const atIdx = this._mentionAtIdx;
-		const cursor = this._mentionCursorIdx;
-		if (atIdx >= 0) {
-			const newText = text.slice(0, atIdx) + text.slice(cursor);
-			this.textarea.value = newText;
-			this.textarea.setSelectionRange(atIdx, atIdx);
-		}
+		const anchorNode = this._mentionAnchorNode;
+		const atOffset = this._mentionAtOffset;
+		const cursorOffset = this._mentionCursorOffset;
 
 		// Avoid duplicate chips
-		const already = this.mentions.some(m => m.type === chip.type && m.value === chip.value);
-		if (!already) {
-			this.mentions.push(chip);
+		const alreadyPresent = Array.from(this.editorEl.querySelectorAll('.volcano-mention-chip'))
+			.some(el => (el as HTMLElement).dataset.type === chip.type &&
+						(el as HTMLElement).dataset.value === chip.value);
+		if (alreadyPresent) {
+			this.closePicker();
+			this.editorEl.focus();
+			return;
+		}
+
+		if (anchorNode && atOffset >= 0 && cursorOffset >= atOffset) {
+			try {
+				// Delete @token from the text node
+				const range = document.createRange();
+				range.setStart(anchorNode, atOffset);
+				range.setEnd(anchorNode, Math.min(cursorOffset, anchorNode.textContent?.length ?? 0));
+				range.deleteContents();
+
+				// Build chip span
+				const iconMap: Record<MentionChip['type'], string> = {
+					note: '📄', folder: '📁', tag: '🏷️', web: '🌐'
+				};
+				const chipEl = document.createElement('span');
+				chipEl.className = 'volcano-mention-chip';
+				chipEl.contentEditable = 'false';
+				chipEl.dataset.type = chip.type;
+				chipEl.dataset.value = chip.value;
+				chipEl.dataset.label = chip.label;
+
+				const textSpan = document.createElement('span');
+				textSpan.textContent = iconMap[chip.type] + ' ' + chip.label;
+				chipEl.appendChild(textSpan);
+
+				const removeBtn = document.createElement('button');
+				removeBtn.className = 'volcano-mention-chip-remove';
+				removeBtn.setAttribute('aria-label', 'Remove mention');
+				removeBtn.textContent = '×';
+				removeBtn.addEventListener('mousedown', (e) => {
+					e.preventDefault();
+				});
+				removeBtn.addEventListener('click', (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					const before = document.createRange();
+					before.setStartBefore(chipEl);
+					before.collapse(true);
+					chipEl.remove();
+					try {
+						const sel = window.getSelection();
+						if (sel) {
+							sel.removeAllRanges();
+							sel.addRange(before);
+						}
+					} catch {
+						// ignore — cursor restoration is best-effort
+					}
+					this.editorEl.focus();
+					this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
+				});
+				chipEl.appendChild(removeBtn);
+
+				// Insert chip at collapsed range
+				range.insertNode(chipEl);
+
+				// Insert empty text node after chip so next keystroke goes there
+				const spacer = document.createTextNode('');
+				chipEl.after(spacer);
+				const afterRange = document.createRange();
+				afterRange.setStart(spacer, 0);
+				afterRange.collapse(true);
+				const sel = window.getSelection();
+				if (sel) {
+					sel.removeAllRanges();
+					sel.addRange(afterRange);
+				}
+			} catch {
+				// Ignore range errors
+			}
 		}
 
 		this.closePicker();
-		this.renderChipsBar();
-		this.textarea.focus();
+		this.editorEl.focus();
+		this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
 	}
 
 	// ── Send ──────────────────────────────────────────────────────────────────
+
+	private extractEditorContent(): { displayText: string; chips: MentionChip[] } {
+		const chips: MentionChip[] = [];
+		let displayText = '';
+
+		for (const node of Array.from(this.editorEl.childNodes)) {
+			if (node.nodeType === Node.TEXT_NODE) {
+				displayText += node.textContent ?? '';
+			} else if (node instanceof HTMLElement && node.classList.contains('volcano-mention-chip')) {
+				const type = (node.dataset.type ?? 'note') as MentionChip['type'];
+				const value = node.dataset.value ?? '';
+				const label = node.dataset.label ?? value;
+				chips.push({ type, label, value });
+				const textSpan = node.querySelector('span');
+				displayText += (textSpan?.textContent ?? label);
+			}
+		}
+
+		return { displayText: displayText.trim(), chips };
+	}
 
 	private renderEmptyState() {
 		this.messagesEl.empty();
@@ -452,8 +542,7 @@ export class AgentView extends ItemView {
 		this.abortController?.abort();
 		this.agentClient?.clearHistory();
 		this.toolCardEls.clear();
-		this.mentions = [];
-		this.renderChipsBar();
+		this.editorEl.innerHTML = '';
 		this.renderEmptyState();
 	}
 
@@ -473,12 +562,12 @@ export class AgentView extends ItemView {
 		return this.agentClient;
 	}
 
-	private async buildContextPreamble(): Promise<string> {
-		if (this.mentions.length === 0) return '';
+	private async buildContextPreamble(chips: MentionChip[]): Promise<string> {
+		if (chips.length === 0) return '';
 
 		const blocks: string[] = [];
 
-		for (const chip of this.mentions) {
+		for (const chip of chips) {
 			try {
 				if (chip.type === 'note') {
 					const { content } = await this.plugin.vaultAdapter.readNote(chip.value);
@@ -516,23 +605,21 @@ export class AgentView extends ItemView {
 	}
 
 	private async handleSend() {
-		const text = this.textarea.value.trim();
-		if (!text) return;
+		const { displayText, chips } = this.extractEditorContent();
+		if (!displayText && chips.length === 0) return;
 
 		const client = this.ensureAgentClient();
 		if (!client) return;
 
-		// Build context from @-mention chips
-		const contextPreamble = await this.buildContextPreamble();
-		const fullMessage = contextPreamble ? text + contextPreamble : text;
-
+		// Lock editor immediately before any async work
 		this.messagesEl.querySelector('.volcano-empty-state')?.remove();
-
-		this.appendMessage('user', text);
-		this.textarea.value = '';
-		this.mentions = [];
-		this.renderChipsBar();
+		this.appendMessage('user', displayText);
+		this.editorEl.innerHTML = '';
 		this.setBusy(true);
+
+		// Build context (async) — editor already cleared and locked above
+		const contextPreamble = await this.buildContextPreamble(chips);
+		const fullMessage = contextPreamble ? displayText + contextPreamble : displayText;
 
 		const assistantEl = this.appendMessage('assistant', '');
 		const contentEl = assistantEl.querySelector('.volcano-message-content') as HTMLElement;
@@ -576,8 +663,8 @@ export class AgentView extends ItemView {
 	}
 
 	private setBusy(busy: boolean) {
-		this.textarea.disabled = busy;
-		this.sendButton.disabled = busy || this.textarea.value.trim().length === 0;
+		this.editorEl.contentEditable = (!busy).toString();
+		this.sendButton.disabled = busy || this.editorEl.textContent!.trim().length === 0;
 		if (busy) {
 			this.sendButton.hide();
 			this.stopButton.show();
