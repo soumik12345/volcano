@@ -26,7 +26,7 @@ export function buildWebTools(provider: WebSearchProvider) {
 		name: 'web_fetch',
 		description: 'Fetch the contents of a URL and return it as clean markdown. Use after web_search to read a specific page. The content is truncated if very long; ask for a specific section if you need more.',
 		parameters: z.object({
-			url: z.string().url().describe('The fully-qualified URL to fetch.')
+			url: z.string().describe('The fully-qualified URL to fetch.')
 		}),
 		execute: async ({ url }) => {
 			try {

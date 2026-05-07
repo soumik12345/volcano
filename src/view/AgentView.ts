@@ -1,4 +1,4 @@
-import { ItemView, MarkdownView, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownRenderer, MarkdownView, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import type { EditorView } from '@codemirror/view';
 import type VolcanoPlugin from '../main';
 import { AgentClient } from '../agent/AgentClient';
@@ -440,9 +440,6 @@ export class AgentView extends ItemView {
 				range.deleteContents();
 
 				// Build chip span
-				const iconMap: Record<MentionChip['type'], string> = {
-					note: '📄', folder: '📁', tag: '🏷️', web: '🌐'
-				};
 				const chipEl = document.createElement('span');
 				chipEl.className = 'volcano-mention-chip';
 				chipEl.contentEditable = 'false';
@@ -451,7 +448,7 @@ export class AgentView extends ItemView {
 				chipEl.dataset.label = chip.label;
 
 				const textSpan = document.createElement('span');
-				textSpan.textContent = iconMap[chip.type] + ' ' + chip.label;
+				textSpan.textContent = '@' + chip.label;
 				chipEl.appendChild(textSpan);
 
 				const removeBtn = document.createElement('button');
@@ -603,52 +600,173 @@ export class AgentView extends ItemView {
 	}
 
 	private async handleSend() {
+		if (this.abortController) return; // already in flight
+
 		const { displayText, chips } = this.extractEditorContent();
 		if (!displayText && chips.length === 0) return;
 
 		const client = this.ensureAgentClient();
 		if (!client) return;
 
-		// Lock editor immediately before any async work
+		this.abortController = new AbortController();
+		const signal = this.abortController.signal;
+		this.setBusy(true);
+
 		this.messagesEl.querySelector('.volcano-empty-state')?.remove();
 		this.appendMessage('user', displayText);
 		this.editorEl.innerHTML = '';
-		this.setBusy(true);
 
-		// Build context (async) — editor already cleared and locked above
 		const contextPreamble = await this.buildContextPreamble(chips);
 		const fullMessage = contextPreamble ? displayText + contextPreamble : displayText;
 
 		const assistantEl = this.appendMessage('assistant', '');
-		const contentEl = assistantEl.querySelector('.volcano-message-content') as HTMLElement;
+		this.toolCardEls.clear();
+		const streamContainerEl = assistantEl.querySelector<HTMLElement>('.volcano-message-content');
+		if (!streamContainerEl) {
+			this.setBusy(false);
+			return;
+		}
 
-		this.abortController = new AbortController();
+		interface TextSeg { el: HTMLElement; rawText: string; timerId: ReturnType<typeof setTimeout> | null; rendering: boolean; hasEverRendered: boolean; setWordCount?: (text: string) => void; }
+		const segments: TextSeg[] = [];
+		let activeSeg: TextSeg | null = null;
+		let reasoningSeg: TextSeg | null = null;
+
+		const getOrCreateSeg = (): TextSeg => {
+			if (!activeSeg) {
+				const el = streamContainerEl.createDiv({ cls: 'volcano-stream-text' });
+				activeSeg = { el, rawText: '', timerId: null, rendering: false, hasEverRendered: false };
+				segments.push(activeSeg);
+			}
+			return activeSeg;
+		};
+
+		const doRender = async (seg: TextSeg) => {
+			if (seg.rendering || !seg.rawText) return;
+			seg.rendering = true;
+			const snapshot = seg.rawText;
+			const tmp = document.createElement('div');
+			await MarkdownRenderer.render(this.plugin.app, snapshot, tmp, '', this);
+			this.fixLinks(tmp);
+			seg.rendering = false;
+			seg.hasEverRendered = true;
+			seg.el.empty();
+			seg.el.style.whiteSpace = 'normal';
+			while (tmp.firstChild) seg.el.appendChild(tmp.firstChild);
+			seg.setWordCount?.(snapshot);
+			if (seg.rawText.length > snapshot.length) {
+				seg.timerId = setTimeout(() => void doRender(seg), 50);
+			}
+		};
+
+		const scheduleSeg = (seg: TextSeg) => {
+			if (seg.timerId !== null) clearTimeout(seg.timerId);
+			seg.timerId = setTimeout(() => { seg.timerId = null; void doRender(seg); }, 50);
+		};
+
+		const finalizeActiveSeg = () => {
+			if (!activeSeg) return;
+			if (activeSeg.timerId !== null) { clearTimeout(activeSeg.timerId); activeSeg.timerId = null; }
+			const seg = activeSeg;
+			activeSeg = null;
+			void doRender(seg);
+		};
 
 		try {
-			await client.sendMessage(fullMessage, this.abortController.signal, {
+			await client.sendMessage(fullMessage, signal, {
 				onTextDelta: (delta) => {
-					contentEl.appendText(delta);
+					const seg = getOrCreateSeg();
+					seg.rawText += delta;
+					if (!seg.hasEverRendered && !seg.rendering) {
+						seg.el.appendText(delta);
+					}
+					scheduleSeg(seg);
+					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+				},
+				onReasoningDelta: (delta) => {
+					if (!reasoningSeg) {
+						const anchorEl = activeSeg?.el ?? null;
+						finalizeActiveSeg();
+						const { block, body, setWordCount } = this.buildStreamingReasoningBlock(true);
+						if (anchorEl && anchorEl.parentElement === streamContainerEl) {
+							streamContainerEl.insertBefore(block, anchorEl);
+						} else {
+							streamContainerEl.appendChild(block);
+						}
+						reasoningSeg = {
+							el: body,
+							rawText: '',
+							timerId: null,
+							rendering: false,
+							hasEverRendered: false,
+							setWordCount
+						};
+						segments.push(reasoningSeg);
+					}
+					reasoningSeg.rawText += delta;
+					reasoningSeg.setWordCount?.(reasoningSeg.rawText);
+					if (!reasoningSeg.hasEverRendered && !reasoningSeg.rendering) {
+						reasoningSeg.el.appendText(delta);
+					}
+					if (reasoningSeg.timerId !== null) clearTimeout(reasoningSeg.timerId);
+					reasoningSeg.timerId = setTimeout(() => {
+						if (reasoningSeg) { reasoningSeg.timerId = null; void doRender(reasoningSeg); }
+					}, 50);
+					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+				},
+				onReasoningItem: (text) => {
+					if (reasoningSeg) {
+						// Streaming path already built the block — finalize and reset for next turn.
+						const seg = reasoningSeg;
+						reasoningSeg = null;
+						if (seg.timerId !== null) { clearTimeout(seg.timerId); seg.timerId = null; }
+						void doRender(seg);
+						return;
+					}
+					// Fallback: provider didn't emit reasoning deltas — render the full item.
+					const anchorEl = activeSeg?.el ?? null;
+					finalizeActiveSeg();
+					const block = this.buildReasoningBlock(text);
+					if (anchorEl && anchorEl.parentElement === streamContainerEl) {
+						streamContainerEl.insertBefore(block, anchorEl);
+					} else {
+						streamContainerEl.appendChild(block);
+					}
 					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 				},
 				onToolCall: (name, args) => {
-					this.appendToolCard(name, args);
+					finalizeActiveSeg();
+					this.appendToolCard(streamContainerEl, name, args);
+					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 				},
 				onToolResult: (name, result) => {
 					this.appendToolResultPreview(name, result);
 				}
 			});
 
-			if (!contentEl.textContent) {
-				contentEl.setText('(no response)');
+			if (streamContainerEl.childElementCount === 0) {
+				streamContainerEl.createDiv({ cls: 'volcano-stream-text' }).setText('(no response)');
+			}
+
+			// Final render pass
+			for (const seg of segments) {
+				if (seg.timerId !== null) { clearTimeout(seg.timerId); seg.timerId = null; }
+				await doRender(seg);
 			}
 		} catch (err) {
+			for (const seg of segments) {
+				if (seg.timerId !== null) { clearTimeout(seg.timerId); seg.timerId = null; }
+			}
 			console.error('[Volcano] Agent run failed:', err);
-			const msg = err instanceof Error ? (err.stack ?? err.message) : String(err);
-			if (this.abortController?.signal.aborted) {
-				contentEl.appendText('\n\n_[stopped]_');
+			if (signal.aborted) {
+				for (const seg of segments) await doRender(seg);
+				streamContainerEl.createDiv({ cls: 'volcano-stream-text' }).appendText('[stopped]');
 			} else {
 				assistantEl.addClass('volcano-message-error');
-				contentEl.setText('Error: ' + msg);
+				const apiDetail = (err as Record<string, unknown>).error;
+				const msg = err instanceof Error ? err.message : String(err);
+				const detail = apiDetail ? '\n' + JSON.stringify(apiDetail, null, 2) : '';
+				streamContainerEl.createDiv({ cls: 'volcano-stream-text' }).setText('Error: ' + msg + detail);
 			}
 		} finally {
 			this.abortController = null;
@@ -683,6 +801,47 @@ export class AgentView extends ItemView {
 		return el;
 	}
 
+	private buildReasoningBlock(text: string): HTMLElement {
+		const { block, body, setWordCount } = this.buildStreamingReasoningBlock(false);
+		setWordCount(text);
+		void MarkdownRenderer.render(this.plugin.app, text, body, '', this);
+		return block;
+	}
+
+	private buildStreamingReasoningBlock(startExpanded: boolean): {
+		block: HTMLElement;
+		body: HTMLElement;
+		setWordCount: (text: string) => void;
+	} {
+		const block = document.createElement('div');
+		block.className = 'volcano-reasoning-block';
+
+		const header = block.createDiv({ cls: 'volcano-reasoning-header' });
+		header.createSpan({ cls: 'volcano-reasoning-label', text: 'Thinking…' });
+		const wordCountEl = header.createSpan({ cls: 'volcano-reasoning-wordcount', text: '~0 words' });
+		const toggle = header.createEl('button', {
+			cls: 'volcano-reasoning-toggle',
+			text: startExpanded ? '▲ hide' : '▶ show'
+		});
+
+		const body = block.createDiv({ cls: 'volcano-reasoning-body' });
+		body.style.display = startExpanded ? '' : 'none';
+
+		let expanded = startExpanded;
+		header.addEventListener('click', () => {
+			expanded = !expanded;
+			body.style.display = expanded ? '' : 'none';
+			toggle.setText(expanded ? '▲ hide' : '▶ show');
+		});
+
+		const setWordCount = (text: string) => {
+			const wc = text.trim().split(/\s+/).filter(Boolean).length;
+			wordCountEl.setText(`~${wc} words`);
+		};
+
+		return { block, body, setWordCount };
+	}
+
 	private classifyTool(name: string): { icon: string; cssClass: string } {
 		const READ  = ['read_note', 'outline_note', 'search_vault', 'list_files'];
 		const WRITE = ['propose_edit', 'create_note'];
@@ -693,9 +852,9 @@ export class AgentView extends ItemView {
 		return { icon: '🔧', cssClass: 'volcano-tool-unknown' };
 	}
 
-	private appendToolCard(name: string, args: string) {
+	private appendToolCard(containerEl: HTMLElement, name: string, args: string) {
 		const { icon, cssClass } = this.classifyTool(name);
-		const card = this.messagesEl.createDiv({ cls: `volcano-tool-card ${cssClass}` });
+		const card = containerEl.createDiv({ cls: `volcano-tool-card ${cssClass}` });
 		card.dataset.toolName = name;
 		this.toolCardEls.set(name, card);
 
@@ -760,6 +919,28 @@ export class AgentView extends ItemView {
 
 	private truncate(s: string, max: number): string {
 		return s.length > max ? s.slice(0, max) + '…' : s;
+	}
+
+	private fixLinks(el: HTMLElement) {
+		// Convert code-wrapped bare URLs (model sometimes backtick-wraps them) to real links
+		el.querySelectorAll('code').forEach(code => {
+			const text = code.textContent?.trim() ?? '';
+			if (/^https?:\/\/\S+$/.test(text)) {
+				const a = document.createElement('a');
+				a.href = text;
+				a.textContent = text;
+				a.className = 'external-link';
+				a.rel = 'noopener noreferrer';
+				a.addEventListener('click', (e) => { e.preventDefault(); window.open(text, '_blank'); });
+				code.replaceWith(a);
+			}
+		});
+		// Ensure all external links open in the system browser
+		el.querySelectorAll('a[href^="http"]').forEach(link => {
+			const a = link as HTMLAnchorElement;
+			a.rel = 'noopener noreferrer';
+			a.addEventListener('click', (e) => { e.preventDefault(); window.open(a.href, '_blank'); });
+		});
 	}
 
 	private renderPendingPanel() {

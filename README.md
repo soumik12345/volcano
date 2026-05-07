@@ -1,90 +1,105 @@
-# Obsidian Sample Plugin
+# Volcano
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+An AI writing assistant for [Obsidian](https://obsidian.md) that combines vault awareness, web research, and safe diff-first editing.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## Features
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+### Vault-Aware Agent
+The agent can read and search your notes to ground its answers in your actual content:
+- **Read notes** — fetch full content of any note by path
+- **Outline notes** — get a heading outline for quick previews
+- **Search vault** — full-text search across all notes with snippets
+- **List files** — browse markdown files in any folder, sorted by recency
 
-## First time developing plugins?
+### Safe, Diff-First Editing
+The agent cannot modify your notes directly. All writes are staged as diffs and require your explicit approval:
+- **Propose edits** — targeted find-and-replace changes appear in a pending changes panel
+- **Create notes** — stage new notes for review before they're written
+- **Accept or reject** — review each change individually before it touches your vault
 
-Quick starting guide for new plugin devs:
+### Web Research (Optional)
+When configured with a Tavily API key, the agent can search the web and fetch URLs:
+- **Web search** — query the public web for current information
+- **Web fetch** — retrieve and parse any URL as clean markdown
+- Sources are automatically cited with inline footnotes and tracked in note frontmatter
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+### @ Mentions
+Type `@` in the input to reference vault context:
+- Notes, folders, tags, and web URLs
+- Smart autocomplete picker with keyboard navigation
+- Provides targeted context to the agent without pasting content manually
 
-## Releasing new releases
+### Streaming Responses
+Responses stream in real-time as the agent works, with live display of tool calls as they execute.
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+## Supported Providers
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+Volcano uses OpenAI-compatible APIs. Built-in presets:
 
-## Adding your plugin to the community plugin list
+| Provider | Default Model |
+|----------|--------------|
+| OpenAI | `gpt-5` |
+| OpenRouter | `anthropic/claude-sonnet-4-6` |
+| Anthropic | `claude-sonnet-4-6` |
+| Ollama (local) | `llama3.2:latest` |
+| Custom | Any OpenAI-compatible endpoint |
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+## Installation
 
-## How to use
+### Manual Install
+1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release
+2. Copy them to `<your-vault>/.obsidian/plugins/volcano/`
+3. Reload Obsidian and enable **Volcano** in Settings → Community plugins
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+## Configuration
 
-## Manually installing the plugin
+Open Settings → Volcano to configure:
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+**Required**
+- **Provider** — select a preset or choose Custom
+- **Base URL** — OpenAI-compatible API endpoint
+- **API Key** — your API key (not required for Ollama)
+- **Model** — model name (e.g. `gpt-5`, `claude-sonnet-4-6`)
 
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+**Optional**
+- **Auto-title model** — cheaper model for generating thread titles; falls back to the main model if unset
+- **Web search API key** — Tavily API key to enable web search and fetch tools
 
-## Funding URL
+Use the **Test Connection** button to verify your settings before starting a conversation.
 
-You can include funding URLs where people who use your plugin can financially support it.
+## Usage
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+1. Click the Volcano ribbon icon (or run **Toggle Volcano** from the command palette) to open the agent pane
+2. Type your request in the input box
+3. Use `@` to mention notes or folders as context
+4. Send with `Cmd+Enter` (macOS) / `Ctrl+Enter` (Windows/Linux); `Shift+Enter` inserts a newline
+5. Review any proposed edits in the **Pending Changes** panel and accept or reject them
+6. Use **New Thread** to start a fresh conversation
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+## Development
+
+### Prerequisites
+- Node.js v16+
+- npm
+
+### Setup
+```bash
+npm install
+npm run dev   # watch mode — compiles on save
 ```
 
-If you have multiple URLs, you can also do:
-
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
+### Build for release
+```bash
+npm run build
 ```
 
-## API Documentation
+### Lint
+```bash
+npm run lint
+```
 
-See https://docs.obsidian.md
+To test during development, copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/volcano/` folder and reload Obsidian.
+
+## License
+
+MIT
