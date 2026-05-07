@@ -238,7 +238,7 @@ export class AgentView extends ItemView {
 
 		if (results.length === 0) { this.closePicker(); return; }
 
-		// Record position for use in selectMentionItem / addChipAndClean
+		// Record position for use in addChipAndClean
 		this._mentionAnchorNode = anchorNode;
 		this._mentionAtOffset = atIdx;
 		this._mentionCursorOffset = offset;
@@ -251,6 +251,7 @@ export class AgentView extends ItemView {
 			itemEl.setAttribute('role', 'option');
 			itemEl.createSpan({ cls: 'volcano-mention-item-icon', text: item.icon });
 			itemEl.createSpan({ cls: 'volcano-mention-item-label', text: item.display });
+			itemEl.createSpan({ cls: 'volcano-mention-item-type', text: item.typeLabel });
 			itemEl.addEventListener('click', () => {
 				this.selectMentionItem(item);
 			});
@@ -260,169 +261,158 @@ export class AgentView extends ItemView {
 		this.editorEl.setAttribute('aria-expanded', 'true');
 	}
 
+	/**
+	 * Score how well `name` matches `query`. Higher = better.
+	 *   2 = name starts with query
+	 *   1 = name contains query (substring)
+	 *   0 = no match
+	 * Both inputs are lowercased before comparison.
+	 */
+	private scoreMatch(name: string, query: string): number {
+		if (query === '') return 1; // empty query matches everything equally
+		const n = name.toLowerCase();
+		const q = query.toLowerCase();
+		if (n.startsWith(q)) return 2;
+		if (n.includes(q)) return 1;
+		return 0;
+	}
+
 	private buildPickerResults(token: string): Array<{
 		icon: string;
 		display: string;
+		typeLabel: 'note' | 'folder' | 'tag' | 'action';
 		chip: MentionChip;
 	}> {
-		const MAX = 8;
-		const results: Array<{ icon: string; display: string; chip: MentionChip }> = [];
+		const MAX = 10;
+		type Row = {
+			icon: string;
+			display: string;
+			typeLabel: 'note' | 'folder' | 'tag' | 'action';
+			chip: MentionChip;
+			score: number;
+			sortKey: string;
+		};
 
-		if (token === '' || token === 'n' || token === 'no' || token === 'nod' || token === 'note' ||
-			token === 'f' || token === 'fo' || token === 'fol' || token === 'fold' || token === 'folde' || token === 'folder' ||
-			token === 't' || token === 'ta' || token === 'tag' ||
-			token === 'w' || token === 'we' || token === 'web') {
-			// Check if it's a pure prefix (no colon yet)
-			if (!token.includes(':')) {
-				// Show type options
-				const typeOptions: Array<{ prefix: string; icon: string; label: string }> = [];
-				if ('note'.startsWith(token))   typeOptions.push({ prefix: '@note:',   icon: '📄', label: '@note: — search notes' });
-				if ('folder'.startsWith(token)) typeOptions.push({ prefix: '@folder:', icon: '📁', label: '@folder: — search folders' });
-				if ('tag'.startsWith(token))    typeOptions.push({ prefix: '@tag:',    icon: '🏷️', label: '@tag: — search tags' });
-				if ('web'.startsWith(token))    typeOptions.push({ prefix: '@web',     icon: '🌐', label: '@web — enable web search' });
-
-				for (const opt of typeOptions) {
-					results.push({
-						icon: opt.icon,
-						display: opt.label,
-						chip: { type: 'note', label: '', value: '__type_prefix__:' + opt.prefix }
-					});
-				}
-				return results.slice(0, MAX);
+		// Empty query: recent notes + web action.
+		if (token === '') {
+			const rows: Row[] = [];
+			const recentPaths = this.plugin.app.workspace.getLastOpenFiles();
+			const seen = new Set<string>();
+			for (const path of recentPaths) {
+				if (rows.length >= 5) break;
+				if (seen.has(path)) continue;
+				seen.add(path);
+				const file = this.plugin.app.vault.getAbstractFileByPath(path);
+				if (!(file instanceof TFile) || file.extension !== 'md') continue;
+				rows.push({
+					icon: '📄',
+					display: file.path,
+					typeLabel: 'note',
+					chip: { type: 'note', label: file.path, value: file.path },
+					score: 1,
+					sortKey: file.path.toLowerCase(),
+				});
 			}
-		}
-
-		if (token.startsWith('note:')) {
-			const query = token.slice('note:'.length).toLowerCase();
-			const files = this.plugin.app.vault.getMarkdownFiles();
-			for (const file of files) {
-				if (results.length >= MAX) break;
-				if (!query || file.basename.toLowerCase().includes(query)) {
-					results.push({
-						icon: '📄',
-						display: file.basename,
-						chip: { type: 'note', label: 'Note: ' + file.basename, value: file.path }
-					});
-				}
-			}
-			return results;
-		}
-
-		if (token.startsWith('folder:')) {
-			const query = token.slice('folder:'.length).toLowerCase();
-			const folders: TFolder[] = [];
-			const collectFolders = (folder: TFolder) => {
-				folders.push(folder);
-				for (const child of folder.children) {
-					if (child instanceof TFolder) collectFolders(child);
-				}
-			};
-			collectFolders(this.plugin.app.vault.getRoot());
-			for (const folder of folders) {
-				if (results.length >= MAX) break;
-				if (!query || folder.path.toLowerCase().includes(query)) {
-					const displayPath = folder.path === '/' ? '(root)' : folder.path;
-					results.push({
-						icon: '📁',
-						display: displayPath,
-						chip: { type: 'folder', label: 'Folder: ' + displayPath, value: folder.path }
-					});
-				}
-			}
-			return results;
-		}
-
-		if (token.startsWith('tag:')) {
-			const query = token.slice('tag:'.length).toLowerCase();
-			const tagsRecord = (this.plugin.app.metadataCache as unknown as { getTags(): Record<string, number> }).getTags();
-			for (const tagKey of Object.keys(tagsRecord)) {
-				if (results.length >= MAX) break;
-				// Keys include '#' prefix — strip it for display/matching
-				const tagName = tagKey.startsWith('#') ? tagKey.slice(1) : tagKey;
-				if (!query || tagName.toLowerCase().includes(query)) {
-					results.push({
-						icon: '🏷️',
-						display: tagName,
-						chip: { type: 'tag', label: 'Tag: ' + tagName, value: tagName }
-					});
-				}
-			}
-			return results;
-		}
-
-		if (token === 'web') {
-			results.push({
+			rows.push({
 				icon: '🌐',
-				display: 'Search web',
-				chip: { type: 'web', label: 'Web search', value: 'web' }
+				display: 'Search the web',
+				typeLabel: 'action',
+				chip: { type: 'web', label: 'Web search', value: 'web' },
+				score: 1,
+				sortKey: 'zzz_web',
 			});
-			return results;
+			return rows.map(({ icon, display, typeLabel, chip }) => ({ icon, display, typeLabel, chip }));
 		}
 
-		return results;
+		// Non-empty query: score across all four sources.
+		const candidates: Row[] = [];
+
+		// Notes — match basename.
+		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+			const score = this.scoreMatch(file.basename, token);
+			if (score === 0) continue;
+			candidates.push({
+				icon: '📄',
+				display: file.path,
+				typeLabel: 'note',
+				chip: { type: 'note', label: file.path, value: file.path },
+				score,
+				sortKey: file.basename.toLowerCase(),
+			});
+		}
+
+		// Folders — match full folder path.
+		const collectFolders = (folder: TFolder, out: TFolder[]) => {
+			out.push(folder);
+			for (const child of folder.children) {
+				if (child instanceof TFolder) collectFolders(child, out);
+			}
+		};
+		const folders: TFolder[] = [];
+		collectFolders(this.plugin.app.vault.getRoot(), folders);
+		for (const folder of folders) {
+			if (folder.path === '' || folder.path === '/') continue;
+			const score = this.scoreMatch(folder.path, token);
+			if (score === 0) continue;
+			candidates.push({
+				icon: '📁',
+				display: folder.path,
+				typeLabel: 'folder',
+				chip: { type: 'folder', label: folder.path, value: folder.path },
+				score,
+				sortKey: folder.path.toLowerCase(),
+			});
+		}
+
+		// Tags — match name without leading '#'.
+		const tagsRecord = (this.plugin.app.metadataCache as unknown as { getTags(): Record<string, number> }).getTags();
+		for (const tagKey of Object.keys(tagsRecord)) {
+			const tagName = tagKey.startsWith('#') ? tagKey.slice(1) : tagKey;
+			const score = this.scoreMatch(tagName, token);
+			if (score === 0) continue;
+			candidates.push({
+				icon: '🏷️',
+				display: tagName,
+				typeLabel: 'tag',
+				chip: { type: 'tag', label: tagName, value: tagName },
+				score,
+				sortKey: tagName.toLowerCase(),
+			});
+		}
+
+		// Web action — match aliases.
+		const webAliases = ['web', 'search', 'internet'];
+		let webScore = 0;
+		for (const alias of webAliases) {
+			webScore = Math.max(webScore, this.scoreMatch(alias, token));
+		}
+		if (webScore > 0) {
+			candidates.push({
+				icon: '🌐',
+				display: 'Search the web',
+				typeLabel: 'action',
+				chip: { type: 'web', label: 'Web search', value: 'web' },
+				score: webScore,
+				sortKey: 'zzz_web',
+			});
+		}
+
+		candidates.sort((a, b) => {
+			if (b.score !== a.score) return b.score - a.score;
+			return a.sortKey.localeCompare(b.sortKey);
+		});
+
+		return candidates.slice(0, MAX).map(({ icon, display, typeLabel, chip }) => ({
+			icon, display, typeLabel, chip,
+		}));
 	}
 
-	private selectMentionItem(item: { icon: string; display: string; chip: MentionChip }) {
-		// Handle type-prefix placeholder selections (e.g. clicking "@note: — search notes")
-		if (item.chip.value.startsWith('__type_prefix__:')) {
-			const prefix = item.chip.value.slice('__type_prefix__:'.length);
-
-			// @web has no sub-query — turn it straight into a chip instead of
-			// re-inserting "@web" text and re-triggering the picker (which would
-			// just show the same @web placeholder again).
-			if (prefix === '@web') {
-				this.addChipAndClean({ type: 'web', label: 'Web search', value: 'web' });
-				return;
-			}
-			// prefix is like "@note:" or "@web"
-			// Preserve the @ — only replace the text between @ and the cursor
-			const anchorNode = this._mentionAnchorNode;
-			const atOffset = this._mentionAtOffset;
-			const cursorOffset = this._mentionCursorOffset;
-			if (!anchorNode || atOffset < 0) return;
-
-			// suffix = everything after @: "note:" or "web"
-			const suffix = prefix.startsWith('@') ? prefix.slice(1) : prefix;
-
-			try {
-				// Mutate the anchor text node in place so @ and the inserted suffix
-				// stay within the same text node. Using Range.insertNode would split
-				// the text node into three pieces, breaking the picker regex which
-				// scans only the caret's current text node.
-				const original = anchorNode.textContent ?? '';
-				const safeCursor = Math.min(cursorOffset, original.length);
-				const before = original.slice(0, atOffset + 1); // includes "@"
-				const after = original.slice(safeCursor);
-				anchorNode.textContent = before + suffix + after;
-
-				// Place caret right after the inserted suffix, still inside anchorNode
-				const caretOffset = before.length + suffix.length;
-				const newRange = document.createRange();
-				newRange.setStart(anchorNode, caretOffset);
-				newRange.collapse(true);
-				const sel = window.getSelection();
-				if (sel) {
-					sel.removeAllRanges();
-					sel.addRange(newRange);
-				}
-			} catch {
-				this.closePicker();
-				return;
-			}
-
-			this.closePicker();
-			this.editorEl.focus();
-			this.updateMentionPicker(); // re-trigger: now token is "note:" → shows note list
-			return;
-		}
-
-		// Web chip: add directly
-		if (item.chip.type === 'web') {
-			this.addChipAndClean(item.chip);
-			return;
-		}
-
-		// Regular chip
+	private selectMentionItem(item: {
+		icon: string;
+		display: string;
+		typeLabel: 'note' | 'folder' | 'tag' | 'action';
+		chip: MentionChip;
+	}) {
 		this.addChipAndClean(item.chip);
 	}
 

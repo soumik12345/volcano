@@ -443,3 +443,11 @@
 }
 .volcano-mention-item-icon { font-size: 13px; }
 .volcano-mention-item-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.volcano-mention-item-type {
+	margin-left: auto;
+	font-size: 10px;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	flex-shrink: 0;
+}
