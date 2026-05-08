@@ -9,8 +9,100 @@ import {
 	type AgentInputItem,
 	type Tool
 } from '@openai/agents';
+import type { RequestOptions } from 'https';
+import type { IncomingMessage } from 'http';
 
 setTracingDisabled(true);
+
+// Electron's renderer fetch can silently drop the Authorization header for cross-origin requests.
+// Node.js built-ins are externalized by esbuild and available in Obsidian's Electron renderer
+// (nodeIntegration is enabled), so we use https.request() which bypasses all browser-level
+// CORS and header-stripping behaviour entirely.
+function makeNodeFetch(apiKey: string): typeof fetch {
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	const httpsModule = (typeof require !== 'undefined' ? require('https') : null) as {
+		request: (opts: RequestOptions, cb: (res: IncomingMessage) => void) => {
+			on: (ev: string, cb: (e: Error) => void) => void;
+			write: (b: string) => void;
+			destroy: (e?: Error) => void;
+			end: () => void;
+		};
+	} | null;
+
+	if (!httpsModule) {
+		// Fallback: renderer fetch (may fail auth in some Electron builds)
+		return (input, init) => {
+			const headers = new Headers(init?.headers as HeadersInit | undefined);
+			headers.set('Authorization', `Bearer ${apiKey}`);
+			return fetch(input, { ...init, headers });
+		};
+	}
+
+	return (input, init): Promise<Response> => {
+		return new Promise((resolve, reject) => {
+			const url = new URL(typeof input === 'string' ? input : (input as Request).url);
+			const reqHeaders: Record<string, string> = {};
+
+			if (init?.headers instanceof Headers) {
+				init.headers.forEach((v, k) => { reqHeaders[k] = v; });
+			} else if (init?.headers) {
+				new Headers(init.headers as HeadersInit).forEach((v, k) => { reqHeaders[k] = v; });
+			}
+			// Force Authorization regardless of what the SDK built
+			reqHeaders['authorization'] = `Bearer ${apiKey}`;
+
+			const body = typeof init?.body === 'string' ? init.body : undefined;
+			const signal = init?.signal;
+			let done = false;
+
+			const req = httpsModule.request(
+				{
+					hostname: url.hostname,
+					port: Number(url.port) || 443,
+					path: url.pathname + url.search,
+					method: (init?.method ?? 'GET').toUpperCase(),
+					headers: reqHeaders,
+				},
+				(res) => {
+					const status = res.statusCode ?? 200;
+					const resHeaders = new Headers();
+					for (const [k, v] of Object.entries(res.headers)) {
+						if (typeof v === 'string') resHeaders.append(k, v);
+						else if (Array.isArray(v)) v.forEach(h => resHeaders.append(k, h));
+					}
+
+					const stream = new ReadableStream<Uint8Array>({
+						start(controller) {
+							res.on('data', (chunk: Buffer) => {
+								if (!done) controller.enqueue(new Uint8Array(chunk));
+							});
+							res.on('end', () => {
+								if (!done) { done = true; controller.close(); }
+							});
+							res.on('error', (err: Error) => {
+								if (!done) { done = true; controller.error(err); }
+							});
+						},
+						cancel() { done = true; req.destroy(); },
+					});
+
+					resolve(new Response(stream, { status, headers: resHeaders }));
+				}
+			);
+
+			req.on('error', (err: Error) => { if (!done) { done = true; reject(err); } });
+
+			if (signal) {
+				signal.addEventListener('abort', () => {
+					if (!done) { done = true; req.destroy(new Error('Aborted')); }
+				}, { once: true });
+			}
+
+			if (body) req.write(body);
+			req.end();
+		});
+	};
+}
 
 async function* tapReasoningStream(
 	stream: AsyncIterable<unknown>,
@@ -60,20 +152,11 @@ export class AgentClient {
 		const apiKey = settings.apiKey || 'unused';
 		console.debug('[Volcano] Creating OpenAI client — baseURL:', settings.baseUrl, '| apiKey set:', apiKey !== 'unused');
 
-		// Electron's renderer fetch can silently drop the Authorization header for cross-origin
-		// requests. Providing a custom fetch that sets the header right before the network call
-		// is the only reliable way to ensure it survives to the wire.
-		const authFetch: typeof fetch = (input, init) => {
-			const headers = new Headers(init?.headers);
-			headers.set('Authorization', `Bearer ${apiKey}`);
-			return fetch(input, { ...init, headers });
-		};
-
 		const openaiClient = new OpenAI({
 			baseURL: settings.baseUrl,
 			apiKey,
 			dangerouslyAllowBrowser: true,
-			fetch: authFetch,
+			fetch: makeNodeFetch(apiKey),
 			defaultHeaders: {
 				Authorization: `Bearer ${apiKey}`,
 			},
