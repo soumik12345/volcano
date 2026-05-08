@@ -145,6 +145,18 @@
 	border-radius: 4px;
 }
 
+.volcano-settings-status--valid {
+	background-color: var(--background-modifier-success);
+}
+
+.volcano-settings-status--error {
+	background-color: var(--background-modifier-error);
+}
+
+.volcano-seg-rendered {
+	white-space: normal;
+}
+
 .volcano-header-button {
 	font-size: 12px;
 	padding: 4px 8px;

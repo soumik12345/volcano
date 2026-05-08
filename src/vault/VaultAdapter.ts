@@ -1,4 +1,4 @@
-import { App, TFile, TFolder, Vault } from 'obsidian';
+import { App, MarkdownView, TFile, TFolder } from 'obsidian';
 
 export interface VaultFile {
 	path: string;
@@ -50,7 +50,7 @@ export class VaultAdapter {
 	async deleteNote(path: string): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (file && file instanceof TFile) {
-			await this.app.vault.delete(file);
+			await this.app.fileManager.trashFile(file);
 		}
 	}
 
@@ -94,8 +94,8 @@ export class VaultAdapter {
 	getOpenFiles(): string[] {
 		const leaves = this.app.workspace.getLeavesOfType('markdown');
 		return leaves
-			.map(leaf => (leaf.view as any).file?.path)
-			.filter(path => path);
+			.map(leaf => leaf.view instanceof MarkdownView ? leaf.view.file?.path : undefined)
+			.filter((path): path is string => path !== undefined);
 	}
 
 	async getHeadings(path: string): Promise<Array<{level: number, text: string, line: number}>> {
@@ -120,7 +120,7 @@ export class VaultAdapter {
 		return headings;
 	}
 
-	async getFrontmatter(path: string): Promise<Record<string, any> | null> {
+	async getFrontmatter(path: string): Promise<Record<string, unknown> | null> {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (!file || !(file instanceof TFile)) {
 			return null;

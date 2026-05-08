@@ -1,4 +1,4 @@
 declare module "*.svelte" {
-	const component: any;
+	const component: unknown;
 	export default component;
 }

@@ -37,22 +37,22 @@ export default class VolcanoPlugin extends Plugin {
 		);
 
 		// Add ribbon icon to toggle the agent pane
-		this.addRibbonIcon('bot', 'Toggle Volcano Agent', () => {
-			this.toggleView();
+		this.addRibbonIcon('bot', 'Toggle agent', () => {
+			void this.toggleView();
 		});
 
 		// Add command to toggle agent pane
 		this.addCommand({
-			id: 'open-volcano-agent',
-			name: 'Toggle Volcano Agent',
+			id: 'open-agent',
+			name: 'Toggle agent',
 			callback: () => {
-				this.toggleView();
+				void this.toggleView();
 			}
 		});
 
 		this.addCommand({
-			id: 'add-selection-to-volcano',
-			name: 'Add selection to Volcano',
+			id: 'add-selection',
+			name: 'Add selection',
 			editorCallback: (editor: Editor, ctx: MarkdownFileInfo) => {
 				const chip = this.buildSelectionChip(editor, ctx);
 				if (!chip) return;
@@ -66,7 +66,7 @@ export default class VolcanoPlugin extends Plugin {
 				if (!chip) return;
 				menu.addItem(item =>
 					item
-						.setTitle('Add selection to Volcano')
+						.setTitle('Add selection to volcano')
 						.setIcon('bot')
 						.onClick(() => void this.addSelectionToVolcano(chip))
 				);
@@ -78,7 +78,7 @@ export default class VolcanoPlugin extends Plugin {
 	}
 
 	onunload() {
-		this.app.workspace.detachLeavesOfType(VOLCANO_VIEW_TYPE);
+		
 		this.sessionStore?.close();
 	}
 
@@ -137,6 +137,6 @@ export default class VolcanoPlugin extends Plugin {
 			}
 		}
 
-		workspace.revealLeaf(leaf);
+		void workspace.revealLeaf(leaf);
 	}
 }

@@ -72,13 +72,13 @@ export class AgentView extends ItemView {
 		root.addClass('volcano-pane');
 
 		const header = root.createDiv({ cls: 'volcano-header' });
-		header.createEl('h2', { text: '🌋 Volcano Agent' });
+		header.createEl('h2', { text: '🌋 volcano agent' });
 
 		const headerActions = header.createDiv({ cls: 'volcano-header-actions' });
 
 		const historyBtn = headerActions.createEl('button', {
 			cls: 'volcano-header-button',
-			text: '🕘 History'
+			text: '🕘 history'
 		});
 		historyBtn.addEventListener('click', () => {
 			this.openHistoryModal();
@@ -103,8 +103,7 @@ export class AgentView extends ItemView {
 		});
 
 		const inputRow = root.createDiv({ cls: 'volcano-input' });
-		// Make input row position:relative so picker's bottom:100% works
-		inputRow.style.position = 'relative';
+		// position:relative is set via the .volcano-input CSS class
 
 		// Create picker dropdown (hidden initially) — direct child of inputRow
 		// so bottom:100% positions it above the entire input box
@@ -136,6 +135,7 @@ export class AgentView extends ItemView {
 
 		// @ mention trigger button
 		const atBtn = toolbarLeft.createEl('button', { cls: 'volcano-toolbar-icon-btn', attr: { 'aria-label': 'Mention' } });
+		// eslint-disable-next-line @microsoft/sdl/no-inner-html
 		atBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>`;
 		atBtn.addEventListener('click', () => {
 			this.editorEl.focus();
@@ -159,8 +159,10 @@ export class AgentView extends ItemView {
 		});
 
 		this.sendButton = toolbarRight.createEl('button', { cls: 'volcano-send', attr: { 'aria-label': 'Send' } });
+		// eslint-disable-next-line @microsoft/sdl/no-inner-html
 		this.sendButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
 		this.stopButton = toolbarRight.createEl('button', { cls: 'volcano-stop', attr: { 'aria-label': 'Stop' } });
+		// eslint-disable-next-line @microsoft/sdl/no-inner-html
 		this.stopButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
 		this.sendButton.disabled = true;
 		this.stopButton.hide();
@@ -176,7 +178,7 @@ export class AgentView extends ItemView {
 
 			// Handle picker keyboard navigation when picker is open
 			if (this.pickerEl.style.display !== 'none') {
-				const items = Array.from(this.pickerEl.querySelectorAll('.volcano-mention-item')) as HTMLElement[];
+				const items = Array.from(this.pickerEl.querySelectorAll<HTMLElement>('.volcano-mention-item'));
 				if (items.length > 0) {
 					if (event.key === 'ArrowDown') {
 						event.preventDefault();
@@ -812,7 +814,7 @@ export class AgentView extends ItemView {
 			seg.rendering = false;
 			seg.hasEverRendered = true;
 			seg.el.empty();
-			seg.el.style.whiteSpace = 'normal';
+			seg.el.addClass('volcano-seg-rendered');
 			while (tmp.firstChild) seg.el.appendChild(tmp.firstChild);
 			seg.setWordCount?.(snapshot);
 			if (seg.rawText.length > snapshot.length) {
@@ -1112,7 +1114,7 @@ export class AgentView extends ItemView {
 		if (!card) return;
 
 		// Add status indicator to header
-		const header = card.querySelector('.volcano-tool-header') as HTMLElement | null;
+		const header = card.querySelector('.volcano-tool-header');
 		if (header) {
 			const isError = (() => {
 				try { return (JSON.parse(result) as Record<string, unknown>)?.error !== undefined; }
@@ -1223,7 +1225,7 @@ export class AgentView extends ItemView {
 				cls: `volcano-pending-row${diff.status === 'conflicted' ? ' volcano-pending-conflict' : ''}`
 			});
 			if (this.pendingCollapsed) {
-				row.style.display = 'none';
+				row.hide();
 			}
 			diffRows.push(row);
 
@@ -1324,10 +1326,11 @@ export class AgentView extends ItemView {
 						void this.resumeSession(session.id);
 					});
 
-					const deleteBtn = right.createEl('button', { cls: 'volcano-history-delete-btn' });
-					// Trash icon SVG
-					deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
-					deleteBtn.addEventListener('click', async (e) => {
+				const deleteBtn = right.createEl('button', { cls: 'volcano-history-delete-btn' });
+				// eslint-disable-next-line @microsoft/sdl/no-inner-html
+				deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+				deleteBtn.addEventListener('click', (e) => {
+					void (async () => {
 						e.stopPropagation();
 						try {
 							await this.plugin.sessionStore!.deleteSession(session.id);
@@ -1337,7 +1340,8 @@ export class AgentView extends ItemView {
 						}
 						if (session.id === this.currentSessionId) this.resetThread();
 						this.renderHistoryModalContent(card, overlay);
-					});
+					})();
+				});
 				}
 
 				rowEls.push({ el: row, title: titleText.toLowerCase() });

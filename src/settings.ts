@@ -121,18 +121,15 @@ export class VolcanoSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Volcano Agent Settings' });
+		new Setting(containerEl).setName('Connection').setHeading();
 
 		const validation = validateSettings(this.plugin.settings);
 		const statusEl = containerEl.createDiv({ cls: 'volcano-settings-status' });
-		statusEl.style.padding = '8px 12px';
-		statusEl.style.marginBottom = '12px';
-		statusEl.style.borderRadius = '4px';
 		if (validation.ok) {
-			statusEl.style.backgroundColor = 'var(--background-modifier-success)';
-			statusEl.setText('✓ Configuration looks valid.');
+			statusEl.addClass('volcano-settings-status--valid');
+			statusEl.setText('✓ configuration looks valid.');
 		} else {
-			statusEl.style.backgroundColor = 'var(--background-modifier-error)';
+			statusEl.addClass('volcano-settings-status--error');
 			statusEl.setText('⚠ ' + validation.errors.join(' '));
 		}
 
@@ -163,6 +160,7 @@ export class VolcanoSettingTab extends PluginSettingTab {
 		// Base URL
 		new Setting(containerEl)
 			.setName('Base URL')
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
 			.setDesc('OpenAI-compatible API endpoint')
 			.addText(text => text
 				.setPlaceholder('https://api.openai.com/v1')
@@ -174,7 +172,7 @@ export class VolcanoSettingTab extends PluginSettingTab {
 
 		// API Key
 		new Setting(containerEl)
-			.setName('API Key')
+			.setName('API key')
 			.setDesc('Your API key for the selected provider')
 			.addText(text => {
 				text.inputEl.type = 'password';
@@ -192,7 +190,8 @@ export class VolcanoSettingTab extends PluginSettingTab {
 			.setName('Model')
 			.setDesc('Model name to use for conversations')
 			.addText(text => text
-				.setPlaceholder('gpt-5')
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
+			.setPlaceholder('gpt-4o-mini')
 				.setValue(this.plugin.settings.model)
 				.onChange(async (value) => {
 					this.plugin.settings.model = value;
@@ -219,7 +218,8 @@ export class VolcanoSettingTab extends PluginSettingTab {
 			.addText(text => {
 				text.inputEl.type = 'number';
 				text.inputEl.min = '1';
-				text.inputEl.style.width = '80px';
+				// eslint-disable-next-line obsidianmd/no-static-styles-assignment
+			text.inputEl.style.width = '80px';
 				text
 					.setValue(String(this.plugin.settings.maxTurns))
 					.onChange(async (value) => {
@@ -231,7 +231,7 @@ export class VolcanoSettingTab extends PluginSettingTab {
 					});
 			});
 
-		containerEl.createEl('h3', { text: 'Web Search' });
+		new Setting(containerEl).setName('Web search').setHeading();
 
 		// Web search provider
 		new Setting(containerEl)

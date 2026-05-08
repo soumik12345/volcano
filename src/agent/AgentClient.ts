@@ -25,7 +25,7 @@ async function* tapReasoningStream(
 			const r = (typeof delta.reasoning === 'string' && delta.reasoning)
 				|| (typeof delta.reasoning_content === 'string' && delta.reasoning_content)
 				|| '';
-			if (r) getCb()?.(r as string);
+			if (r) getCb()?.(r);
 		}
 		yield chunk;
 	}
@@ -153,7 +153,7 @@ export class AgentClient {
 
 			await stream.completed;
 
-			this.history = stream.history as AgentInputItem[];
+			this.history = stream.history;
 
 			return assistantText;
 		} catch (err) {
