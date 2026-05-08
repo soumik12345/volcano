@@ -71,8 +71,13 @@ export function validateSettings(settings: VolcanoSettings): SettingsValidation 
 	}
 
 	const isLocalProvider = settings.providerPreset === 'ollama';
-	if (!isLocalProvider && !settings.apiKey.trim()) {
-		errors.push('API key is required for the selected provider.');
+	if (!isLocalProvider) {
+		const key = settings.apiKey.trim();
+		if (!key) {
+			errors.push('API key is required for the selected provider.');
+		} else if (key.startsWith('http://') || key.startsWith('https://')) {
+			errors.push('API key looks like a URL — paste your actual API key (e.g. sk-or-v1-…), not the base URL.');
+		}
 	}
 
 	return { ok: errors.length === 0, errors };
