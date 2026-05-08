@@ -1,5 +1,6 @@
 import { normalizePath, type App } from 'obsidian';
 import initSqlJs from 'sql.js';
+import sqlWasmBase64 from 'sql.js/dist/sql-wasm.wasm';
 import type { AgentInputItem } from '@openai/agents';
 import type { StoredSession, StoredMessage } from './types';
 
@@ -17,11 +18,14 @@ export class SessionStore {
   }
 
   static async load(app: App): Promise<SessionStore> {
-    const wasmPath = normalizePath(`${app.vault.configDir}/plugins/volcano/sql-wasm.wasm`);
     const dbPath = normalizePath(`${app.vault.configDir}/plugins/volcano/sessions.db`);
 
-    const wasmBuffer = await app.vault.adapter.readBinary(wasmPath);
-    const SQL = await initSqlJs({ wasmBinary: wasmBuffer });
+    // Decode the base64-embedded WASM (bundled by esbuild — works with BRAT installs
+    // which only deliver main.js and therefore never have sql-wasm.wasm on disk).
+    const binaryStr = atob(sqlWasmBase64);
+    const wasmBytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) wasmBytes[i] = binaryStr.charCodeAt(i);
+    const SQL = await initSqlJs({ wasmBinary: wasmBytes });
 
     let db: SqlDatabase;
     if (await app.vault.adapter.exists(dbPath)) {
