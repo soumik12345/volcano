@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify version matches release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
+          if [ "$MANIFEST_VERSION" != "$RELEASE_TAG" ]; then
+            echo "::error::Version mismatch: manifest.json has '$MANIFEST_VERSION' but release tag is '$RELEASE_TAG'."
+            echo "::error::Run 'npm version <version>' locally to sync manifest.json and versions.json, commit and push, then re-publish the release."
+            exit 1
+          fi
+          echo "Version check passed: $MANIFEST_VERSION"
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" main.js manifest.json styles.css sql-wasm.wasm --clobber

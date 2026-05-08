@@ -53,6 +53,7 @@ Volcano uses OpenAI-compatible APIs. Built-in presets:
 2. Open the command palette and run **BRAT: Add a beta plugin for testing**
 3. Paste `https://github.com/soumik12345/volcano` and confirm
 4. Go to **Settings → Community plugins** and enable **Volcano**
+5. Download `sql-wasm.wasm` from the [latest release](https://github.com/soumik12345/volcano/releases/latest) and place it in `<your-vault>/.obsidian/plugins/volcano/` — BRAT does not download this file automatically, and without it conversation history will not be saved across sessions.
 
 ### Manual Install
 1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release
