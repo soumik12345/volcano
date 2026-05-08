@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, VolcanoSettings, VolcanoSettingTab } from './settings
 import { DiffEngine } from './diff/DiffEngine';
 import { volcanoDiffExtension } from './diff/cmDecorations';
 import { SessionStore } from './session/SessionStore';
+import sqlWasmBase64 from 'sql.js/dist/sql-wasm.wasm';
 
 export default class VolcanoPlugin extends Plugin {
 	settings: VolcanoSettings;
@@ -21,7 +22,7 @@ export default class VolcanoPlugin extends Plugin {
 		this.diffEngine = new DiffEngine(this.vaultAdapter);
 
 		try {
-			this.sessionStore = await SessionStore.load(this.app);
+			this.sessionStore = await SessionStore.load(this.app, sqlWasmBase64);
 		} catch (err) {
 			console.error('[Volcano] Failed to load session store:', err);
 			// Plugin continues without session history if WASM or DB fails to load
