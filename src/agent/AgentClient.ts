@@ -57,10 +57,17 @@ export class AgentClient {
 	private settings: VolcanoSettings;
 
 	constructor(settings: VolcanoSettings, vault: VaultAdapter, diffEngine: DiffEngine) {
+		const apiKey = settings.apiKey || 'unused';
+		console.debug('[Volcano] Creating OpenAI client — baseURL:', settings.baseUrl, '| apiKey set:', apiKey !== 'unused');
 		const openaiClient = new OpenAI({
 			baseURL: settings.baseUrl,
-			apiKey: settings.apiKey || 'unused',
-			dangerouslyAllowBrowser: true
+			apiKey,
+			dangerouslyAllowBrowser: true,
+			// Belt-and-suspenders: Electron's renderer fetch can drop the Authorization header
+			// in some CORS paths. Setting it via defaultHeaders forces it onto every request.
+			defaultHeaders: {
+				Authorization: `Bearer ${apiKey}`,
+			},
 		});
 
 		this.openaiClient = openaiClient;
