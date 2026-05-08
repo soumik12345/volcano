@@ -29,6 +29,8 @@ function makeNodeFetch(apiKey: string): typeof fetch {
 		};
 	} | null;
 
+	console.error('[Volcano] makeNodeFetch — httpsModule available:', !!httpsModule, '| apiKey prefix:', apiKey.slice(0, 8));
+
 	if (!httpsModule) {
 		// Fallback: renderer fetch (may fail auth in some Electron builds)
 		return (input, init) => {
@@ -51,6 +53,14 @@ function makeNodeFetch(apiKey: string): typeof fetch {
 			// Force Authorization regardless of what the SDK built
 			reqHeaders['authorization'] = `Bearer ${apiKey}`;
 
+			console.error(
+				'[Volcano] Node.js fetch →', url.hostname + url.pathname,
+				'| method:', init?.method,
+				'| apiKey prefix:', apiKey.slice(0, 8),
+				'| auth header present:', !!reqHeaders['authorization'],
+				'| body type:', typeof init?.body,
+			);
+
 			const body = typeof init?.body === 'string' ? init.body : undefined;
 			const signal = init?.signal;
 			let done = false;
@@ -65,6 +75,7 @@ function makeNodeFetch(apiKey: string): typeof fetch {
 				},
 				(res) => {
 					const status = res.statusCode ?? 200;
+					console.error('[Volcano] Node.js response ← status:', status);
 					const resHeaders = new Headers();
 					for (const [k, v] of Object.entries(res.headers)) {
 						if (typeof v === 'string') resHeaders.append(k, v);
