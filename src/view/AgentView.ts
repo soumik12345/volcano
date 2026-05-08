@@ -18,10 +18,10 @@ function relativeTime(ts: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-interface MentionChip {
-	type: 'note' | 'folder' | 'tag' | 'web';
-	label: string;  // display text e.g. "Note: daily.md"
-	value: string;  // the path/tag/url for context resolution
+export interface MentionChip {
+	type: 'note' | 'folder' | 'tag' | 'web' | 'selection';
+	label: string;
+	value: string;
 }
 
 export class AgentView extends ItemView {
@@ -557,6 +557,87 @@ export class AgentView extends ItemView {
 		this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
 	}
 
+	private insertChip(chip: MentionChip): void {
+		// For selection chips, deduplicate by label (file+line) not value (raw text),
+		// so two selections with identical text from different locations can both be added.
+		const alreadyPresent = Array.from(this.editorEl.querySelectorAll('.volcano-mention-chip'))
+			.some(el => (el as HTMLElement).dataset.type === chip.type &&
+						(chip.type === 'selection'
+							? (el as HTMLElement).dataset.label === chip.label
+							: (el as HTMLElement).dataset.value === chip.value));
+		if (alreadyPresent) {
+			this.editorEl.focus();
+			return;
+		}
+
+		// Build chip element — same DOM structure as addChipAndClean
+		const chipEl = document.createElement('span');
+		chipEl.className = 'volcano-mention-chip';
+		chipEl.contentEditable = 'false';
+		chipEl.dataset.type = chip.type;
+		chipEl.dataset.value = chip.value;
+		chipEl.dataset.label = chip.label;
+
+		const textSpan = document.createElement('span');
+		textSpan.textContent = '@' + chip.label;
+		chipEl.appendChild(textSpan);
+
+		const removeBtn = document.createElement('button');
+		removeBtn.className = 'volcano-mention-chip-remove';
+		removeBtn.setAttribute('aria-label', 'Remove mention');
+		removeBtn.textContent = '×';
+		removeBtn.addEventListener('mousedown', (e) => {
+			e.preventDefault();
+		});
+		removeBtn.addEventListener('click', (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			const before = document.createRange();
+			before.setStartBefore(chipEl);
+			before.collapse(true);
+			chipEl.remove();
+			try {
+				const sel = window.getSelection();
+				if (sel) {
+					sel.removeAllRanges();
+					sel.addRange(before);
+				}
+			} catch {
+				// ignore — cursor restoration is best-effort
+			}
+			this.editorEl.focus();
+			this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
+		});
+		chipEl.appendChild(removeBtn);
+
+		// Append chip then a zero-width spacer so next keystroke lands after it
+		this.editorEl.appendChild(chipEl);
+		const spacer = document.createTextNode('');
+		this.editorEl.appendChild(spacer);
+
+		// Place cursor after the chip
+		try {
+			const afterRange = document.createRange();
+			afterRange.setStart(spacer, 0);
+			afterRange.collapse(true);
+			const sel = window.getSelection();
+			if (sel) {
+				sel.removeAllRanges();
+				sel.addRange(afterRange);
+			}
+		} catch {
+			// ignore — cursor placement is best-effort
+		}
+
+		this.closePicker();
+		this.editorEl.focus();
+		this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
+	}
+
+	public addSelectionChip(chip: MentionChip): void {
+		this.insertChip(chip);
+	}
+
 	// ── Send ──────────────────────────────────────────────────────────────────
 
 	private extractEditorContent(): { displayText: string; chips: MentionChip[] } {
@@ -645,6 +726,8 @@ export class AgentView extends ItemView {
 					blocks.push(`## @tag: ${tag}\n${taggedFiles.join('\n')}`);
 				} else if (chip.type === 'web') {
 					blocks.push('[Web search enabled for this message]');
+				} else if (chip.type === 'selection') {
+					blocks.push(`## @selection: ${chip.label}\n${chip.value}`);
 				}
 			} catch (err) {
 				console.warn('[Volcano] @-mention context error:', err);

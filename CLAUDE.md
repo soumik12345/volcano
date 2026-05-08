@@ -9,9 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run lint` — ESLint
 - `npm run version` — bump `manifest.json` + `versions.json` and stage both
 
-No automated test runner. Type-checking (`tsc -noEmit`) is the primary validation step, run automatically as part of `npm run build`.
+No automated test runner. Type-checking is the primary validation step, run automatically as part of `npm run build` (uses `-skipLibCheck`).
+
+**Known pre-existing tsc error:** Running `npx tsc --noEmit` directly (without `-skipLibCheck`) always produces one error from `node_modules/@openai/agents-core` about `asyncDispose` not existing on `SymbolConstructor`. This is caused by the `tsconfig.json` `lib` array only going to ES7, which predates that symbol. Ignore this error — it is not introduced by local changes and does not affect the build.
 
 To test: copy `main.js`, `manifest.json`, `styles.css` to your vault's `.obsidian/plugins/volcano/` and reload Obsidian. The `sql-wasm.wasm` binary is copied to the plugin root by esbuild automatically during build.
+
+**esbuild externals:** All `@codemirror/*` and `@lezer/*` packages are marked external in `esbuild.config.mjs` — they are provided by Obsidian at runtime and must not be bundled. Importing a new `@codemirror` sub-package will compile but fail at runtime unless it is also added to the `external` list.
 
 ## Architecture
 
@@ -95,7 +99,11 @@ CodeMirror integration (`src/diff/cmDecorations.ts`) uses a stateful field `volc
 
 ### Mention System
 
-The input editor is a `contentEditable` div. Typing `@` triggers a fuzzy picker over vault files, folders, tags, and a "Search the web" action. Selected items become `volcano-mention-chip` spans (`contentEditable=false`) embedded in the editor. On send, `extractEditorContent()` separates plain text from chips; `buildContextPreamble()` resolves each chip to actual content (note text, folder listing, etc.) and appends it as a fenced section to the message sent to the agent.
+The input editor is a `contentEditable` div. Typing `@` triggers a fuzzy picker over vault files, folders, tags, and a "Search the web" action. Selected items become `volcano-mention-chip` spans (`contentEditable=false`) embedded in the editor. On send, `extractEditorContent()` separates plain text from chips; `buildContextPreamble()` resolves each chip to actual content and appends it as a fenced section to the message sent to the agent.
+
+`MentionChip` is an exported interface with `type: 'note' | 'folder' | 'tag' | 'web' | 'selection'`. The `'selection'` type is added externally (not via the picker) when a user right-clicks selected text in a note or runs the "Add selection to Volcano" command — handled in `main.ts` via `buildSelectionChip()` / `addSelectionToVolcano()`, then inserted into the input by `AgentView.addSelectionChip()`. Selection chips deduplicate by label (file+line), not by value (raw text), unlike other chip types.
+
+`AgentView.insertChip()` appends chips directly to `editorEl` without anchor state (contrast with `addChipAndClean()`, which splices at the `@` cursor position).
 
 ### Provider Configuration
 

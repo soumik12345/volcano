@@ -1,5 +1,6 @@
-import { Plugin } from 'obsidian';
+import { Editor, MarkdownFileInfo, Menu, Plugin } from 'obsidian';
 import { AgentView, VOLCANO_VIEW_TYPE } from './view/AgentView';
+import type { MentionChip } from './view/AgentView';
 import { VaultAdapter } from './vault/VaultAdapter';
 import { DEFAULT_SETTINGS, VolcanoSettings, VolcanoSettingTab } from './settings';
 import { DiffEngine } from './diff/DiffEngine';
@@ -49,6 +50,29 @@ export default class VolcanoPlugin extends Plugin {
 			}
 		});
 
+		this.addCommand({
+			id: 'add-selection-to-volcano',
+			name: 'Add selection to Volcano',
+			editorCallback: (editor: Editor, ctx: MarkdownFileInfo) => {
+				const chip = this.buildSelectionChip(editor, ctx);
+				if (!chip) return;
+				void this.addSelectionToVolcano(chip);
+			},
+		});
+
+		this.registerEvent(
+			this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor, info: MarkdownFileInfo) => {
+				const chip = this.buildSelectionChip(editor, info);
+				if (!chip) return;
+				menu.addItem(item =>
+					item
+						.setTitle('Add selection to Volcano')
+						.setIcon('bot')
+						.onClick(() => void this.addSelectionToVolcano(chip))
+				);
+			})
+		);
+
 		// Add settings tab
 		this.addSettingTab(new VolcanoSettingTab(this.app, this));
 	}
@@ -73,6 +97,29 @@ export default class VolcanoPlugin extends Plugin {
 			return;
 		}
 		await this.activateView();
+	}
+
+	private buildSelectionChip(editor: Editor, info: MarkdownFileInfo): MentionChip | null {
+		const text = editor.getSelection();
+		if (!text) return null;
+
+		const basename = info.file?.basename ?? 'untitled';
+		const from = editor.getCursor('from');
+		const to = editor.getCursor('to');
+		const fromLine = from.line + 1;
+		const toLine = to.line + 1;
+		const label = fromLine === toLine
+			? `${basename}:${fromLine}`
+			: `${basename}:${fromLine}-${toLine}`;
+
+		return { type: 'selection', label, value: text };
+	}
+
+	private async addSelectionToVolcano(chip: MentionChip): Promise<void> {
+		await this.activateView();
+		const leaf = this.app.workspace.getLeavesOfType(VOLCANO_VIEW_TYPE)[0];
+		const view = leaf?.view instanceof AgentView ? leaf.view : null;
+		view?.addSelectionChip(chip);
 	}
 
 	async activateView() {

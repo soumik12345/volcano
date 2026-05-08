@@ -29,6 +29,8 @@ Type `@` in the input to reference vault context:
 - Smart autocomplete picker with keyboard navigation
 - Provides targeted context to the agent without pasting content manually
 
+**Selection mentions:** Select any text in an open note, then right-click and choose **Add selection to Volcano** (or run it from the command palette). The selected passage appears as a `@NoteName:12-15` chip in the input — the agent receives the exact lines you chose as context.
+
 ### Streaming Responses
 Responses stream in real-time as the agent works, with live display of tool calls as they execute.
 
@@ -80,7 +82,7 @@ Use the **Test Connection** button to verify your settings before starting a con
 
 1. Click the Volcano ribbon icon (or run **Toggle Volcano** from the command palette) to open the agent pane
 2. Type your request in the input box
-3. Use `@` to mention notes or folders as context
+3. Use `@` to mention notes, folders, or tags as context — or select text in any note and right-click **Add selection to Volcano** to send a specific passage
 4. Send with `Cmd+Enter` (macOS) / `Ctrl+Enter` (Windows/Linux); `Shift+Enter` inserts a newline
 5. Review any proposed edits in the **Pending Changes** panel and accept or reject them
 6. Use **New Thread** to start a fresh conversation
