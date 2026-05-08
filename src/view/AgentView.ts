@@ -27,6 +27,7 @@ export interface MentionChip {
 export class AgentView extends ItemView {
 	plugin: VolcanoPlugin;
 	private agentClient: AgentClient | null = null;
+	private agentClientKey: string | null = null;
 	private abortController: AbortController | null = null;
 
 	private messagesEl!: HTMLElement;
@@ -681,17 +682,20 @@ export class AgentView extends ItemView {
 	}
 
 	private ensureAgentClient(): AgentClient | null {
-		const validation = validateSettings(this.plugin.settings);
+		const { settings } = this.plugin;
+		const validation = validateSettings(settings);
 		if (!validation.ok) {
 			new Notice('Volcano: ' + validation.errors.join(' '), 8000);
 			return null;
 		}
-		if (!this.agentClient) {
+		const key = `${settings.baseUrl}|${settings.apiKey}|${settings.model}`;
+		if (!this.agentClient || this.agentClientKey !== key) {
 			this.agentClient = new AgentClient(
-				this.plugin.settings,
+				settings,
 				this.plugin.vaultAdapter,
 				this.plugin.diffEngine
 			);
+			this.agentClientKey = key;
 		}
 		return this.agentClient;
 	}
