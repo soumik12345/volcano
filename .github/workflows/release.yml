@@ -23,17 +23,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify version matches release tag
+      - name: Sync version to release tag
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
-          if [ "$MANIFEST_VERSION" != "$RELEASE_TAG" ]; then
-            echo "::error::Version mismatch: manifest.json has '$MANIFEST_VERSION' but release tag is '$RELEASE_TAG'."
-            echo "::error::Run 'npm version <version>' locally to sync manifest.json and versions.json, commit and push, then re-publish the release."
-            exit 1
-          fi
-          echo "Version check passed: $MANIFEST_VERSION"
+          node -e "
+            const fs = require('fs');
+            const tag = process.env.RELEASE_TAG;
+
+            const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            const minAppVersion = manifest.minAppVersion;
+            manifest.version = tag;
+            fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, '\t') + '\n');
+
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = tag;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, '\t') + '\n');
+
+            const versions = JSON.parse(fs.readFileSync('versions.json', 'utf8'));
+            versions[tag] = minAppVersion;
+            fs.writeFileSync('versions.json', JSON.stringify(versions, null, '\t') + '\n');
+
+            console.log('Synced version to', tag);
+          "
 
       - name: Build
         run: npm run build
