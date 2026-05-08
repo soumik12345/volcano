@@ -59,12 +59,21 @@ export class AgentClient {
 	constructor(settings: VolcanoSettings, vault: VaultAdapter, diffEngine: DiffEngine) {
 		const apiKey = settings.apiKey || 'unused';
 		console.debug('[Volcano] Creating OpenAI client — baseURL:', settings.baseUrl, '| apiKey set:', apiKey !== 'unused');
+
+		// Electron's renderer fetch can silently drop the Authorization header for cross-origin
+		// requests. Providing a custom fetch that sets the header right before the network call
+		// is the only reliable way to ensure it survives to the wire.
+		const authFetch: typeof fetch = (input, init) => {
+			const headers = new Headers(init?.headers);
+			headers.set('Authorization', `Bearer ${apiKey}`);
+			return fetch(input, { ...init, headers });
+		};
+
 		const openaiClient = new OpenAI({
 			baseURL: settings.baseUrl,
 			apiKey,
 			dangerouslyAllowBrowser: true,
-			// Belt-and-suspenders: Electron's renderer fetch can drop the Authorization header
-			// in some CORS paths. Setting it via defaultHeaders forces it onto every request.
+			fetch: authFetch,
 			defaultHeaders: {
 				Authorization: `Bearer ${apiKey}`,
 			},
