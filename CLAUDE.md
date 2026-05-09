@@ -13,9 +13,13 @@ No automated test runner. Type-checking is the primary validation step, run auto
 
 **Known pre-existing tsc error:** Running `npx tsc --noEmit` directly (without `-skipLibCheck`) always produces one error from `node_modules/@openai/agents-core` about `asyncDispose` not existing on `SymbolConstructor`. This is caused by the `tsconfig.json` `lib` array only going to ES7, which predates that symbol. Ignore this error — it is not introduced by local changes and does not affect the build.
 
-To test: copy `main.js`, `manifest.json`, `styles.css` to your vault's `.obsidian/plugins/volcano/` and reload Obsidian. The `sql-wasm.wasm` binary is copied to the plugin root by esbuild automatically during build.
+To test: copy `main.js`, `manifest.json`, `styles.css` to your vault's `.obsidian/plugins/volcano/` and reload Obsidian.
 
-**esbuild externals:** All `@codemirror/*` and `@lezer/*` packages are marked external in `esbuild.config.mjs` — they are provided by Obsidian at runtime and must not be bundled. Importing a new `@codemirror` sub-package will compile but fail at runtime unless it is also added to the `external` list.
+**esbuild externals:** All `@codemirror/*`, `@lezer/*`, and Node.js built-in modules (`builtinModules`) are marked external in `esbuild.config.mjs`. Node built-ins (`https`, `http`, etc.) are available at runtime in Obsidian's Electron renderer via `require()` because Obsidian runs with `nodeIntegration: true`. Importing a new `@codemirror` sub-package will compile but fail at runtime unless added to the `external` list.
+
+## Release Process
+
+The CI workflow (`.github/workflows/release.yml`) triggers on `release: published`, runs `npm run build`, and uploads `main.js`, `manifest.json`, `styles.css` to the GitHub release. Cutting a release: delete and re-create the tag pointing to the desired commit using `release.sh`, which triggers CI. The tag must point to the commit with all changes — run `release.sh` only after pushing all commits.
 
 ## Architecture
 
@@ -28,11 +32,19 @@ Four systems are instantiated at `onload()` and shared across the plugin as `Vol
 - `SessionStore` — optional sql.js SQLite store for conversation persistence (null if WASM fails to load)
 - A CodeMirror 6 state extension registered globally for diff decoration
 
-The `AgentView` receives references to all four via the plugin instance.
+`main.ts` also imports `sql-wasm.wasm` as a base64 string (bundled by esbuild's `loader: { '.wasm': 'base64' }`) and passes it to `SessionStore.load()`. This means the WASM binary is embedded in `main.js` — no separate file is needed, which allows BRAT installs to work since BRAT only downloads `main.js`, `manifest.json`, and `styles.css`.
+
+The `AgentView` receives references to all four systems via the plugin instance.
 
 ### Agent Pipeline
 
-**`AgentClient`** owns conversation state (`history: AgentInputItem[]`) and wraps the `@openai/agents` SDK. One architectural constraint: the SDK only emits `reasoning_item` events *after* the full stream ends, making live thinking blocks impossible. To work around this, `AgentClient` patches `openaiClient.chat.completions.create` to intercept each raw chunk and forward `delta.reasoning` / `delta.reasoning_content` (DeepSeek) immediately via `onReasoningDelta`. The downstream `onReasoningItem` callback is kept as a fallback for providers that don't stream reasoning.
+**`AgentClient`** (`src/agent/AgentClient.ts`) owns conversation state (`history: AgentInputItem[]`) and wraps the `@openai/agents` SDK.
+
+**HTTP / Auth:** Obsidian's Electron renderer `fetch` can silently drop the `Authorization` header for cross-origin requests. `AgentClient` bypasses this by passing a custom `fetch` (built by `makeNodeFetch()`) to the OpenAI constructor that uses Node.js's `https.request()` directly, which has no browser CORS machinery. The `https` module is available via `require('https')` at runtime (it's in `builtinModules`, externalized by esbuild). If `require` is unavailable, it falls back to renderer `fetch` with an explicit `Authorization` header set.
+
+**Streaming reasoning:** The `@openai/agents` SDK only emits `reasoning_item` events *after* the full stream ends. `AgentClient` patches `openaiClient.chat.completions.create` to intercept raw SSE chunks and forward `delta.reasoning` / `delta.reasoning_content` (DeepSeek) immediately via `onReasoningDelta`. The `onReasoningItem` callback is kept as a post-stream fallback.
+
+**Client lifecycle:** `AgentView.ensureAgentClient()` computes a key from `baseUrl|apiKey|model` and recreates the `AgentClient` instance whenever any of those change. This ensures settings updates (e.g., entering an API key after install) are always picked up before sending a message.
 
 `RunCallbacks` interface:
 ```
@@ -42,8 +54,6 @@ onReasoningItem  — full reasoning block (post-stream fallback)
 onToolCall       — tool invocation fired
 onToolResult     — tool output available
 ```
-
-Clearing history (`clearHistory()`) resets the `history` array. A "New thread" creates a fresh `AgentClient` instance. After the first exchange in a session, `AgentClient` fires an auto-title call as a fire-and-forget background request to generate a session title from the conversation.
 
 **`AgentView`** (`src/view/AgentView.ts`) is pure vanilla DOM — the Svelte files in `src/view/components/` are unused. The streaming rendering model:
 
@@ -56,7 +66,7 @@ Clearing history (`clearHistory()`) resets the `history` array. A "New thread" c
 
 ### Session Persistence
 
-`SessionStore` (`src/session/SessionStore.ts`) wraps `sql.js` (in-memory SQLite compiled to WASM). The binary `sql-wasm.wasm` is loaded from the plugin directory at runtime via `vault.adapter.readBinary`. The database file `sessions.db` is persisted at `<vault>/.obsidian/plugins/volcano/sessions.db` via `vault.adapter.writeBinary` after each write.
+`SessionStore` (`src/session/SessionStore.ts`) wraps `sql.js` (in-memory SQLite compiled to WASM). The WASM binary is received as a base64 string parameter to `SessionStore.load()` (imported in `main.ts` via esbuild's base64 loader), decoded with `atob()`, and passed to `initSqlJs({ wasmBinary })`. The database file `sessions.db` is persisted at `<vault>/.obsidian/plugins/volcano/sessions.db` via `vault.adapter.writeBinary` after each write.
 
 Schema:
 - `sessions(id, title, created_at, updated_at, history_json)` — one row per conversation thread
@@ -64,22 +74,16 @@ Schema:
 
 Key methods: `appendMessage()` saves each user/assistant turn; `updateHistory()` stores the full `AgentInputItem[]` array; `listSessions()` returns sessions with message counts; `loadSession()` restores history for replay.
 
-`AgentView` opens a session history modal (history button in the toolbar) listing past sessions. Clicking a session calls `loadSession()` to restore both the `history` array and the visual conversation.
-
 ### Tool System
 
 Tools are registered in `AgentClient`'s constructor and passed to the `@openai/agents` `Agent`. Three sets:
 
-- **Read-only** (`src/agent/tools/index.ts`): `read_note`, `outline_note`, `search_vault`, `list_files`  
+- **Read-only** (`src/agent/tools/index.ts`): `read_note`, `outline_note`, `search_vault`, `list_files`.  
   Note: `search_vault` in `VaultAdapter` is currently a stub — it returns the first N files with a generic snippet, not actual full-text search.
 - **Write** (`src/agent/tools/write.ts`): `propose_edit` (exact substring match required), `create_note`. Both stage to `DiffEngine`, never write directly.
-- **Web** (`src/agent/tools/web.ts`): `web_search`, `web_fetch` — only registered if a Tavily API key is configured. `web_fetch` uses a 30k-char truncation limit.
+- **Web** (`src/agent/tools/web.ts`): `web_search`, `web_fetch` — only registered if a Tavily API key is configured. `web_fetch` uses a 30k-char truncation limit. Web tools use Obsidian's `requestUrl()` (not `fetch`) to avoid CORS in the Electron context.
 
 All tools return JSON-stringified objects with an `error` field on failure (not thrown), so the agent can handle errors in-context.
-
-### Citations
-
-`src/agent/citations.ts` handles web research attribution. When the agent uses web tools, citations are extracted from search results and formatted as inline footnotes. Sources are tracked in note frontmatter when writing to the vault.
 
 ### Diff / Pending Changes System
 
@@ -107,4 +111,4 @@ The input editor is a `contentEditable` div. Typing `@` triggers a fuzzy picker 
 
 ### Provider Configuration
 
-All providers use the OpenAI SDK pointed at different `baseURL` values (`PROVIDER_PRESETS` in `settings.ts`). Anthropic and OpenRouter are accessed via their OpenAI-compatible endpoints — no Anthropic SDK. This means provider-specific features not exposed via the Chat Completions shape are unavailable. `validateSettings()` checks URL format, model name, and API key requirements. `testConnection()` calls `models.list()` to verify connectivity.
+All providers use the OpenAI SDK pointed at different `baseURL` values (`PROVIDER_PRESETS` in `settings.ts`). Anthropic and OpenRouter are accessed via their OpenAI-compatible endpoints — no Anthropic SDK. `validateSettings()` checks URL format, model name, and API key requirements (including a guard against accidentally entering the base URL in the API key field). `testConnection()` calls `models.list()` to verify connectivity.

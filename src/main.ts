@@ -1,11 +1,12 @@
-import { Editor, MarkdownFileInfo, Menu, Plugin } from 'obsidian';
+import { Editor, MarkdownFileInfo, Menu, Notice, Plugin } from 'obsidian';
 import { AgentView, VOLCANO_VIEW_TYPE } from './view/AgentView';
 import type { MentionChip } from './view/AgentView';
 import { VaultAdapter } from './vault/VaultAdapter';
-import { DEFAULT_SETTINGS, VolcanoSettings, VolcanoSettingTab } from './settings';
+import { DEFAULT_SETTINGS, VolcanoSettings, VolcanoSettingTab, validateSettings } from './settings';
 import { DiffEngine } from './diff/DiffEngine';
 import { volcanoDiffExtension } from './diff/cmDecorations';
 import { SessionStore } from './session/SessionStore';
+import { AgentClient } from './agent/AgentClient';
 import sqlWasmBase64 from 'sql.js/dist/sql-wasm.wasm';
 
 export default class VolcanoPlugin extends Plugin {
@@ -13,6 +14,7 @@ export default class VolcanoPlugin extends Plugin {
 	vaultAdapter: VaultAdapter;
 	diffEngine: DiffEngine;
 	sessionStore: SessionStore | null = null;
+	private agentClient: AgentClient | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -89,6 +91,21 @@ export default class VolcanoPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		if (validateSettings(this.settings).ok) {
+			this.agentClient = null;
+		}
+	}
+
+	getAgentClient(): AgentClient | null {
+		const validation = validateSettings(this.settings);
+		if (!validation.ok) {
+			new Notice('Volcano: ' + validation.errors.join(' '), 8000);
+			return null;
+		}
+		if (!this.agentClient) {
+			this.agentClient = new AgentClient(this.settings, this.vaultAdapter, this.diffEngine);
+		}
+		return this.agentClient;
 	}
 
 	async toggleView() {

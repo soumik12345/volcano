@@ -1,8 +1,7 @@
 import { ItemView, MarkdownRenderer, MarkdownView, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 import type { EditorView } from '@codemirror/view';
 import type VolcanoPlugin from '../main';
-import { AgentClient } from '../agent/AgentClient';
-import { validateSettings } from '../settings';
+import type { AgentClient } from '../agent/AgentClient';
 import type { StagedDiff } from '../diff/DiffEngine';
 import { applyDiffToEditor } from '../diff/cmDecorations';
 
@@ -27,7 +26,6 @@ export interface MentionChip {
 export class AgentView extends ItemView {
 	plugin: VolcanoPlugin;
 	private agentClient: AgentClient | null = null;
-	private agentClientKey: string | null = null;
 	private abortController: AbortController | null = null;
 
 	private messagesEl!: HTMLElement;
@@ -370,14 +368,16 @@ export class AgentView extends ItemView {
 					sortKey: file.path.toLowerCase(),
 				});
 			}
-			rows.push({
-				icon: '🌐',
-				display: 'Search the web',
-				typeLabel: 'action',
-				chip: { type: 'web', label: 'Web search', value: 'web' },
-				score: 1,
-				sortKey: 'zzz_web',
-			});
+			if (this.plugin.settings.webSearchApiKey?.trim()) {
+				rows.push({
+					icon: '🌐',
+					display: 'Search the web',
+					typeLabel: 'action',
+					chip: { type: 'web', label: 'Web search', value: 'web' },
+					score: 1,
+					sortKey: 'zzz_web',
+				});
+			}
 			return rows.map(({ icon, display, typeLabel, chip }) => ({ icon, display, typeLabel, chip }));
 		}
 
@@ -443,7 +443,7 @@ export class AgentView extends ItemView {
 		for (const alias of webAliases) {
 			webScore = Math.max(webScore, this.scoreMatch(alias, token));
 		}
-		if (webScore > 0) {
+		if (webScore > 0 && this.plugin.settings.webSearchApiKey?.trim()) {
 			candidates.push({
 				icon: '🌐',
 				display: 'Search the web',
@@ -682,21 +682,7 @@ export class AgentView extends ItemView {
 	}
 
 	private ensureAgentClient(): AgentClient | null {
-		const { settings } = this.plugin;
-		const validation = validateSettings(settings);
-		if (!validation.ok) {
-			new Notice('Volcano: ' + validation.errors.join(' '), 8000);
-			return null;
-		}
-		const key = `${settings.baseUrl}|${settings.apiKey}|${settings.model}`;
-		if (!this.agentClient || this.agentClientKey !== key) {
-			this.agentClient = new AgentClient(
-				settings,
-				this.plugin.vaultAdapter,
-				this.plugin.diffEngine
-			);
-			this.agentClientKey = key;
-		}
+		this.agentClient = this.plugin.getAgentClient();
 		return this.agentClient;
 	}
 
@@ -766,6 +752,11 @@ export class AgentView extends ItemView {
 
 		const { displayText, chips } = this.extractEditorContent();
 		if (!displayText && chips.length === 0) return;
+
+		if (chips.some(c => c.type === 'web') && !this.plugin.settings.webSearchApiKey?.trim()) {
+			new Notice('Configure a web search API key in Volcano settings to use @Web search.', 6000);
+			return;
+		}
 
 		const client = this.ensureAgentClient();
 		if (!client) return;

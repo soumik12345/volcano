@@ -199,9 +199,15 @@ export class AgentClient {
 		const webProvider = createWebSearchProvider(settings);
 		if (webProvider) tools.push(...buildWebTools(webProvider));
 
+		const instructions = webProvider
+			? VOLCANO_SYSTEM_PROMPT
+			: VOLCANO_SYSTEM_PROMPT
+				.replace(/Web tools \(only available[\s\S]*?web_fetch:[^\n]*\n/, '')
+				.replace(/- For factual claims about the world,[^\n]*\n/, '');
+
 		this.agent = new Agent({
 			name: 'Volcano',
-			instructions: VOLCANO_SYSTEM_PROMPT,
+			instructions,
 			model: new OpenAIChatCompletionsModel(openaiClient, settings.model),
 			tools
 		});
