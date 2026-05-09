@@ -1,16 +1,18 @@
 # Volcano
 
-Volcano is an AI writing assistant for [Obsidian](https://obsidian.md). It can read your vault, search the web, and propose edits to your notes — but it can't touch a single character without you saying yes first.
+Volcano is an AI writing assistant for [Obsidian](https://obsidian.md). It can read your vault, search the web, and propose edits to your notes.
 
-I built this because I wanted an assistant that actually *knew* my notes, not one that I had to copy-paste context into every time. And I wanted to stay in control of what ends up on disk.
+https://github.com/user-attachments/assets/921547c0-58b6-4d7c-8d0f-aeac932da31c
 
-## What it does
+https://github.com/user-attachments/assets/54286016-f901-462a-ad79-f674a77719d5
 
-**It reads your vault.** The agent can pull up a note by path, get a quick heading outline, search across everything, or browse a folder sorted by recency. So when you ask "what did I write about X last month," it can actually go look.
+## What Volcano does
 
-**It proposes edits, it doesn't make them.** Every change shows up in a pending changes panel as a diff. You accept or reject hunk by hunk. If you've edited the file in the meantime, the diff gets flagged as conflicted instead of silently overwriting your work. New notes work the same way — staged, then approved.
+**Volcano reads your vault.** The agent can pull up a note by path, get a quick heading outline, search across everything, or browse a folder sorted by recency. So when you ask "what did I write about X last month," it can actually go look.
 
-**It can search the web (if you want).** Drop in a [Tavily](https://tavily.com) API key and the agent gets `web_search` and `web_fetch` tools. Sources are cited inline as footnotes and tracked in the note's frontmatter, so you can trace any claim back to where it came from.
+**Volcano doesn't edit your notes, it proposes edits.** Every change shows up in a pending changes panel as a diff. You accept or reject hunk by hunk. If you've edited the file in the meantime, the diff gets flagged as conflicted instead of silently overwriting your work. New notes work the same way — staged, then approved.
+
+**Search the web.** Drop in a [Tavily](https://tavily.com) API key and the agent gets `web_search` and `web_fetch` tools. Sources are cited inline as footnotes and tracked in the note's frontmatter, so you can trace any claim back to where it came from.
 
 **`@` mentions for context.** Type `@` in the input and you get a fuzzy picker over notes, folders, tags, and web URLs. Whatever you pick gets resolved to actual content and handed to the agent. No more pasting.
 
@@ -40,6 +42,10 @@ Volcano talks to anything with an OpenAI-compatible API. Presets out of the box:
 2. Command palette → **BRAT: Add a beta plugin for testing**
 3. Paste `https://github.com/soumik12345/volcano`
 4. Settings → Community plugins → enable **Volcano**
+
+https://github.com/user-attachments/assets/f4b0f7a9-ccac-437c-892a-bd3fd4177713
+
+https://github.com/user-attachments/assets/18956640-7490-4bfc-8abc-de77d9baff7a
 
 ### Manually
 
