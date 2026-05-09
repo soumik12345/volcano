@@ -36,6 +36,9 @@
 	margin-bottom: 10px;
 	padding: 8px 12px;
 	border-radius: 8px;
+	user-select: text;
+	-webkit-user-select: text;
+	cursor: text;
 }
 
 .volcano-message-user {
@@ -226,6 +229,9 @@
 	font-size: 11px;
 	white-space: pre-wrap;
 	word-break: break-word;
+	user-select: text;
+	-webkit-user-select: text;
+	cursor: text;
 }
 
 .volcano-send {
@@ -644,6 +650,9 @@
 	max-height: 200px;
 	overflow-y: auto;
 	border-top: 1px solid var(--background-modifier-border);
+	user-select: text;
+	-webkit-user-select: text;
+	cursor: text;
 }
 
 /* ── Session History Dropdown ──────────────────────────────────────── */
