@@ -167,7 +167,7 @@ export class AgentView extends ItemView {
 		this.stopButton.hide();
 
 		const updateDisabled = () => {
-			this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
+			this.sendButton.disabled = (this.editorEl.textContent ?? '').trim().length === 0;
 			this.updateMentionPicker();
 		};
 		this.editorEl.addEventListener('input', updateDisabled);
@@ -532,7 +532,7 @@ export class AgentView extends ItemView {
 						// ignore — cursor restoration is best-effort
 					}
 					this.editorEl.focus();
-					this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
+					this.sendButton.disabled = (this.editorEl.textContent ?? '').trim().length === 0;
 				});
 				chipEl.appendChild(removeBtn);
 
@@ -557,7 +557,7 @@ export class AgentView extends ItemView {
 
 		this.closePicker();
 		this.editorEl.focus();
-		this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
+		this.sendButton.disabled = (this.editorEl.textContent ?? '').trim().length === 0;
 	}
 
 	private insertChip(chip: MentionChip): void {
@@ -609,7 +609,7 @@ export class AgentView extends ItemView {
 				// ignore — cursor restoration is best-effort
 			}
 			this.editorEl.focus();
-			this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
+			this.sendButton.disabled = (this.editorEl.textContent ?? '').trim().length === 0;
 		});
 		chipEl.appendChild(removeBtn);
 
@@ -634,7 +634,7 @@ export class AgentView extends ItemView {
 
 		this.closePicker();
 		this.editorEl.focus();
-		this.sendButton.disabled = this.editorEl.textContent!.trim().length === 0;
+		this.sendButton.disabled = (this.editorEl.textContent ?? '').trim().length === 0;
 	}
 
 	public addSelectionChip(chip: MentionChip): void {
@@ -754,7 +754,8 @@ export class AgentView extends ItemView {
 		if (!displayText && chips.length === 0) return;
 
 		if (chips.some(c => c.type === 'web') && !this.plugin.settings.webSearchApiKey?.trim()) {
-			new Notice('Configure a web search API key in Volcano settings to use @Web search.', 6000);
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "Volcano" is the plugin name (proper noun)
+			new Notice('Configure a web search API key in Volcano settings to use @web search.', 6000);
 			return;
 		}
 
@@ -1019,7 +1020,7 @@ export class AgentView extends ItemView {
 
 	private setBusy(busy: boolean) {
 		this.editorEl.contentEditable = (!busy).toString();
-		this.sendButton.disabled = busy || this.editorEl.textContent!.trim().length === 0;
+		this.sendButton.disabled = busy || (this.editorEl.textContent ?? '').trim().length === 0;
 		if (busy) {
 			this.sendButton.hide();
 			this.stopButton.show();

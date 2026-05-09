@@ -24,7 +24,7 @@ export class SessionStore {
     const binaryStr = atob(sqlWasmBase64);
     const wasmBytes = new Uint8Array(binaryStr.length);
     for (let i = 0; i < binaryStr.length; i++) wasmBytes[i] = binaryStr.charCodeAt(i);
-    const SQL = await initSqlJs({ wasmBinary: wasmBytes });
+    const SQL = await initSqlJs({ wasmBinary: wasmBytes.buffer });
 
     let db: SqlDatabase;
     if (await app.vault.adapter.exists(dbPath)) {
@@ -64,7 +64,8 @@ export class SessionStore {
 
   private async flush(): Promise<void> {
     const data = this.db.export();
-    const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- TS narrows ArrayBufferLike to ArrayBuffer | SharedArrayBuffer; writeBinary requires ArrayBuffer
+    const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
     await this.app.vault.adapter.writeBinary(this.dbPath, buffer);
   }
 

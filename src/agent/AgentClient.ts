@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules, no-undef, no-restricted-globals -- Node.js https/http and Buffer are intentional: this file bypasses Electron's renderer fetch to fix Authorization header stripping. See makeNodeFetch. */
 import OpenAI from 'openai';
 import {
 	Agent,
@@ -35,7 +36,7 @@ function makeNodeFetch(apiKey: string): typeof fetch {
 	if (!httpsModule) {
 		// Fallback: renderer fetch (may fail auth in some Electron builds)
 		return (input, init) => {
-			const headers = new Headers(init?.headers as HeadersInit | undefined);
+			const headers = new Headers(init?.headers);
 			headers.set('Authorization', `Bearer ${apiKey}`);
 			return fetch(input, { ...init, headers });
 		};
