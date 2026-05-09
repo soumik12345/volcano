@@ -9,6 +9,7 @@ import {
 	type AgentInputItem,
 	type Tool
 } from '@openai/agents';
+import { jsonrepair } from 'jsonrepair';
 import type { RequestOptions } from 'https';
 import type { IncomingMessage } from 'http';
 
@@ -115,6 +116,73 @@ function makeNodeFetch(apiKey: string): typeof fetch {
 	};
 }
 
+// Some providers (notably Gemini via its OpenAI-compatibility layer) emit malformed JSON
+// in `delta.tool_calls[].function.arguments` — e.g. unescaped newlines inside strings.
+// The agents SDK then throws InvalidToolInputError. We buffer the per-tool-call argument
+// fragments ourselves, blank them out on the chunks the SDK sees, and re-emit a single
+// repaired-arguments delta before the finish_reason chunk arrives.
+async function* tapToolCallArgs(stream: AsyncIterable<unknown>): AsyncIterable<unknown> {
+	type Chunk = {
+		choices?: Array<{
+			delta?: { tool_calls?: Array<{ index?: number; function?: { arguments?: string } }> };
+			finish_reason?: string | null;
+		}>;
+	};
+
+	const buffers = new Map<number, string>();
+
+	const emitRepaired = (): unknown[] => {
+		const out: unknown[] = [];
+		for (const [idx, full] of buffers) {
+			const repaired = repairJson(full);
+			out.push({
+				choices: [{
+					index: 0,
+					delta: { tool_calls: [{ index: idx, function: { arguments: repaired } }] },
+					finish_reason: null,
+				}],
+			});
+		}
+		buffers.clear();
+		return out;
+	};
+
+	for await (const raw of stream) {
+		const chunk = raw as Chunk;
+		const choice = chunk.choices?.[0];
+		const tcs = choice?.delta?.tool_calls;
+		if (tcs?.length) {
+			for (const tc of tcs) {
+				const frag = tc.function?.arguments;
+				if (typeof frag === 'string' && frag.length) {
+					const idx = tc.index ?? 0;
+					buffers.set(idx, (buffers.get(idx) ?? '') + frag);
+					if (tc.function) tc.function.arguments = '';
+				}
+			}
+		}
+
+		if (choice?.finish_reason === 'tool_calls' && buffers.size) {
+			for (const repaired of emitRepaired()) yield repaired;
+		}
+
+		yield raw;
+	}
+
+	for (const repaired of emitRepaired()) yield repaired;
+}
+
+function repairJson(s: string): string {
+	try { JSON.parse(s); return s; } catch { /* fall through */ }
+	try {
+		const fixed = jsonrepair(s);
+		JSON.parse(fixed);
+		return fixed;
+	} catch {
+		return s;
+	}
+}
+
 async function* tapReasoningStream(
 	stream: AsyncIterable<unknown>,
 	getCb: () => ((delta: string) => void) | null
@@ -187,7 +255,7 @@ export class AgentClient {
 			const result = originalCreate(...(args as Parameters<typeof originalCreate>));
 			const params = args[0] as { stream?: boolean } | undefined;
 			if (!params?.stream) return result;
-			return (result as Promise<AsyncIterable<unknown>>).then(stream => tapReasoningStream(stream, getReasoningCb));
+			return (result as Promise<AsyncIterable<unknown>>).then(stream => tapReasoningStream(tapToolCallArgs(stream), getReasoningCb));
 		};
 
 		setDefaultOpenAIClient(openaiClient);
