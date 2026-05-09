@@ -785,6 +785,16 @@ export class AgentView extends ItemView {
 			return;
 		}
 
+		const processingEl = this.buildProcessingIndicator();
+		const showProcessing = () => {
+			streamContainerEl.appendChild(processingEl);
+			this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+		};
+		const hideProcessing = () => {
+			if (processingEl.parentElement) processingEl.remove();
+		};
+		showProcessing();
+
 		interface TextSeg { el: HTMLElement; rawText: string; timerId: ReturnType<typeof setTimeout> | null; rendering: boolean; hasEverRendered: boolean; setWordCount?: (text: string) => void; }
 		const segments: TextSeg[] = [];
 		let activeSeg: TextSeg | null = null;
@@ -837,6 +847,7 @@ export class AgentView extends ItemView {
 
 			const assistantText = await client.sendMessage(fullMessage, signal, {
 				onTextDelta: (delta) => {
+					hideProcessing();
 					const seg = getOrCreateSeg();
 					seg.rawText += delta;
 					if (!seg.hasEverRendered && !seg.rendering) {
@@ -846,6 +857,7 @@ export class AgentView extends ItemView {
 					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 				},
 				onReasoningDelta: (delta) => {
+					hideProcessing();
 					if (!reasoningSeg) {
 						const anchorEl = activeSeg?.el ?? null;
 						finalizeActiveSeg();
@@ -884,6 +896,7 @@ export class AgentView extends ItemView {
 						reasoningSeg = null;
 						if (seg.timerId !== null) { clearTimeout(seg.timerId); seg.timerId = null; }
 						void doRender(seg);
+						showProcessing();
 						return;
 					}
 					// Fallback: provider didn't emit reasoning deltas — render the full item.
@@ -895,16 +908,19 @@ export class AgentView extends ItemView {
 					} else {
 						streamContainerEl.appendChild(block);
 					}
+					showProcessing();
 					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 				},
 				onToolCall: (name, args) => {
 					finalizeActiveSeg();
 					this.appendToolCard(streamContainerEl, name, args);
+					showProcessing();
 					capturedToolCalls.push({ name, args });
 					this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 				},
 				onToolResult: (name, result) => {
 					this.appendToolResultPreview(name, result);
+					showProcessing();
 					capturedToolResults.push({ name, result });
 				}
 			});
@@ -979,9 +995,22 @@ export class AgentView extends ItemView {
 				streamContainerEl.createDiv({ cls: 'volcano-stream-text' }).setText('Error: ' + msg + detail);
 			}
 		} finally {
+			hideProcessing();
 			this.abortController = null;
 			this.setBusy(false);
 		}
+	}
+
+	private buildProcessingIndicator(): HTMLElement {
+		const el = document.createElement('div');
+		el.className = 'volcano-processing';
+		el.setAttribute('aria-live', 'polite');
+		el.createSpan({ cls: 'volcano-processing-label', text: 'Processing' });
+		const dots = el.createSpan({ cls: 'volcano-processing-dots' });
+		dots.createSpan({ cls: 'volcano-processing-dot' });
+		dots.createSpan({ cls: 'volcano-processing-dot' });
+		dots.createSpan({ cls: 'volcano-processing-dot' });
+		return el;
 	}
 
 	private handleStop() {
